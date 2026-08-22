@@ -879,7 +879,7 @@ const INITIAL_LAB_TARGETS = [...OTHER_INITIAL_LAB_TARGETS, ...PCCC_INITIAL_LAB_T
 const Bdg = ({ color, bg, text }) => React.createElement("span", { style: { background: bg, color, borderRadius: '4px', padding: '2px 7px', fontSize: '10px', fontWeight: 600, whiteSpace: 'nowrap' } }, text);
 const Dot = ({ color }) => React.createElement("span", { style: { display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%', background: color, flexShrink: 0 } });
 const FieldLabel = ({ children }) => React.createElement("div", { style: { fontSize: '10px', color: T.dim, marginBottom: '4px', fontWeight: 600 } }, children);
-function UnifiedDateRangeCards({ start = '', end = '', onChange, startLabel = '시작일', endLabel = '종료일', rangeLabel = '조회기간' }) {
+function UnifiedDateRangeCards({ start = '', end = '', onChange, startLabel = '시작일', endLabel = '종료일', rangeLabel = '조회기간', labelWidth = '110px', dateMinWidth = '125px' }) {
     const pad = value => String(value).padStart(2, '0');
     const isoLocal = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
     const parseLocal = value => {
@@ -926,12 +926,12 @@ function UnifiedDateRangeCards({ start = '', end = '', onChange, startLabel = '�
                 return React.createElement("button", { key: value, type: 'button', onClick: () => chooseDate(value), style: { height: '32px', borderRadius: '5px', border: `1px solid ${active || isToday ? T.acc : T.bdr}`, background: active ? T.acc : T.white, color: active ? T.white : T.txt, fontSize: '12px', fontWeight: 800, cursor: 'pointer', position: 'relative' } }, Number(value.slice(-2)), isToday && React.createElement("span", { style: { position: 'absolute', left: '50%', bottom: '3px', transform: 'translateX(-50%)', width: '3px', height: '3px', borderRadius: '999px', background: active ? T.white : T.acc } }));
             })));
     })();
-    const dateField = (field, value, title) => React.createElement("div", { style: { position: 'relative', flex: '1 1 130px', minWidth: '125px' } },
+    const dateField = (field, value, title) => React.createElement("div", { style: { position: 'relative', flex: '1 1 112px', minWidth: dateMinWidth } },
         React.createElement("button", { type: 'button', title, onClick: () => openPicker(field), style: { width: '100%', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '0 10px', border: `1px solid ${picker.field === field ? '#64748B' : '#C9CED4'}`, borderRadius: '2px', background: '#FFFFFF', color: '#30363D', fontSize: '13px', fontWeight: 650, cursor: 'pointer', boxSizing: 'border-box' } },
             React.createElement("span", { style: { fontFamily: 'ui-monospace,SFMono-Regular,Menlo,monospace', whiteSpace: 'nowrap' } }, value || '날짜 선택'),
             React.createElement("span", { style: { color: '#7A8491', fontSize: '11px' } }, "▣")),
         picker.field === field && React.createElement("div", { style: { position: 'absolute', top: 'calc(100% + 5px)', left: 0, zIndex: 250 } }, calendar));
-    return React.createElement("div", { ref: wrapRef, style: { display: 'grid', gridTemplateColumns: '110px minmax(0,1fr)', minHeight: '40px', alignItems: 'stretch', border: '1px solid #D4D8DD', background: '#FFFFFF', boxSizing: 'border-box', position: 'relative' } },
+    return React.createElement("div", { ref: wrapRef, style: { display: 'grid', gridTemplateColumns: `${labelWidth} minmax(0,1fr)`, minHeight: '40px', alignItems: 'stretch', border: '1px solid #D4D8DD', background: '#FFFFFF', boxSizing: 'border-box', position: 'relative' } },
         React.createElement("div", { style: { display: 'flex', alignItems: 'center', padding: '0 12px', background: '#F1F1F1', borderRight: '1px solid #D4D8DD', fontSize: '13px', fontWeight: 800, color: '#30363D', boxSizing: 'border-box' } }, rangeLabel),
         React.createElement("div", { style: { padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, boxSizing: 'border-box' } },
             dateField('start', start, startLabel),
@@ -1335,6 +1335,49 @@ function normalizedDeviceDisplay(deviceId = '', deviceName = '', equipmentList =
 }
 function displayText(value) {
     return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
+// QC 통계 표시 자릿수는 해당 검사 장비가 실제 결과에 사용한 소수점 자릿수를 따른다.
+// 계산 원값은 유지하고, 화면 표시/Target 제안 시에만 해당 자릿수로 반올림한다.
+function qcDecimalPlaces(value) {
+    if (value == null || value === '')
+        return null;
+    const text = String(value).trim().replace(/,/g, '');
+    if (!text || !Number.isFinite(Number(text)))
+        return null;
+    if (/e/i.test(text)) {
+        const fixed = Number(text).toFixed(12).replace(/0+$/, '').replace(/\.$/, '');
+        const dot = fixed.indexOf('.');
+        return dot < 0 ? 0 : Math.min(6, fixed.length - dot - 1);
+    }
+    const dot = text.indexOf('.');
+    return dot < 0 ? 0 : Math.min(6, text.length - dot - 1);
+}
+function qcMeasurementRawValue(row) {
+    if (row == null || typeof row !== 'object')
+        return row;
+    const keys = ['raw_value', 'rawValue', 'resultText', 'result_text', 'displayValue', 'valueText', 'value_text', 'result_value', 'resultValue', 'value', 'result', 'numericValue'];
+    for (const key of keys) {
+        if (row[key] != null && row[key] !== '')
+            return row[key];
+    }
+    return '';
+}
+function qcMeasurementPrecision(rows = [], fallback = 2) {
+    const list = Array.isArray(rows) ? rows : [rows];
+    const places = list.map(row => qcDecimalPlaces(qcMeasurementRawValue(row))).filter(value => Number.isInteger(value));
+    if (!places.length)
+        return Math.max(0, Math.min(6, Number(fallback) || 0));
+    return Math.max(0, Math.min(6, Math.max(...places)));
+}
+function qcFormatRounded(value, precision = 2) {
+    const number = Number(value);
+    if (!Number.isFinite(number))
+        return value == null || value === '' ? '-' : String(value);
+    const digits = Math.max(0, Math.min(6, Number(precision) || 0));
+    return number.toFixed(digits);
+}
+function qcFormatMeasuredStat(value, rows = [], fallback = 2) {
+    return qcFormatRounded(value, qcMeasurementPrecision(rows, fallback));
 }
 function displayLookupKey(value) {
     return displayText(value).toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
@@ -5893,13 +5936,13 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
             const finalRows = chartData.rows.map(row => ({ ...row, _detailChartLevel: row._ljLevel, mean: row._ljMean, sd: row._ljSd, targetMin: row._ljTargetMin, targetMax: row._ljTargetMax }));
             const actionEventRows = chartData.actionEvents
                 .map(item => ({ ...item, x: toXDate(item.row.date) }));
-            const byLevel = { 'Level 1': finalRows.filter(row => row._detailChartLevel === 'Level 1'), 'Level 2': finalRows.filter(row => row._detailChartLevel === 'Level 2') };
+            const byLevel = Object.fromEntries(LJ_LEVEL_ORDER.map(level => [level, finalRows.filter(row => row._detailChartLevel === level)]));
             const zFor = row => row._ljZ ?? (row.value - row.mean) / row.sd;
             const lineSegmentsFor = level => lineSegmentsByDate(axisDates, byLevel[level], row => `${toXDate(row.date)},${toY(zFor(row))}`);
             const labelEvery = Math.max(1, Math.ceil(axisDates.length / 8));
             const stat = rows => {
                 const summary = rows[0]?._detailChartLevel ? chartData.stats[rows[0]._detailChartLevel] : null;
-                return summary ? `Mean ${summary.mean.toFixed(3)} / SD ${summary.sd.toFixed(3)}` : '';
+                return summary ? `Mean ${qcFormatMeasuredStat(summary.mean, rows, 2)} / SD ${qcFormatMeasuredStat(summary.sd, rows, 2)}` : '';
             };
             const isTwoSdOut = row => Math.abs(zFor(row)) > 2;
             const tooltipFor = row => [
@@ -5980,6 +6023,7 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
                             out && React.createElement("circle", { cx: cx, cy: cy, r: '6.4', fill: 'none', stroke: chartTheme.warn, strokeWidth: '.9', opacity: '.42', pointerEvents: 'none' })); }),
                         lineSegmentsFor('Level 1').map((segment, i) => segment.length > 1 ? React.createElement("polyline", { key: `l1_${i}`, points: segment.join(' '), fill: 'none', stroke: levelColor['Level 1'], strokeWidth: '2.45', strokeLinecap: 'round', strokeLinejoin: 'round', opacity: '.96' }) : null),
                         lineSegmentsFor('Level 2').map((segment, i) => segment.length > 1 ? React.createElement("polyline", { key: `l2_${i}`, points: segment.join(' '), fill: 'none', stroke: levelColor['Level 2'], strokeWidth: '2.45', strokeLinecap: 'round', strokeLinejoin: 'round', opacity: '.96' }) : null),
+                        lineSegmentsFor('Level 3').map((segment, i) => segment.length > 1 ? React.createElement("polyline", { key: `l3_${i}`, points: segment.join(' '), fill: 'none', stroke: levelColor['Level 3'], strokeWidth: '2.45', strokeLinecap: 'round', strokeLinejoin: 'round', opacity: '.96' }) : null),
                         actionEventRows.map((m, i) => {
                             const marker = m.marker || {};
                             const color = marker.color || T.warn;
@@ -5998,7 +6042,7 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
                     React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'minmax(260px,1.15fr) minmax(230px,.85fr)', gap: '12px', marginTop: '14px' } },
                         React.createElement("div", { style: { border: `1px solid ${chartTheme.border}`, borderRadius: '5px', background: '#F5F6F7', padding: '10px' } },
                             React.createElement("div", { style: { fontSize: '11px', fontWeight: 950, color: chartTheme.ink, marginBottom: '9px' } }, "Level Series"),
-                            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '8px' } }, ['Level 1', 'Level 2'].map(level => byLevel[level].length > 0 && React.createElement("div", { key: level, style: { background: '#FFFFFF', border: `1px solid ${chartTheme.border}`, borderRadius: '4px', padding: '9px 10px', boxShadow: 'none' } },
+                            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '8px' } }, LJ_LEVEL_ORDER.map(level => byLevel[level]?.length > 0 && React.createElement("div", { key: level, style: { background: '#FFFFFF', border: `1px solid ${chartTheme.border}`, borderRadius: '4px', padding: '9px 10px', boxShadow: 'none' } },
                                 React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 950, color: chartTheme.ink } },
                                     React.createElement("span", { style: { width: '10px', height: '10px', borderRadius: '999px', background: levelColor[level], boxShadow: '0 0 0 3px rgba(226,232,240,.65)' } }),
                                     level),
@@ -6200,12 +6244,12 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
         React.createElement("div", { style: { height: '100%', display: 'flex', alignItems: 'center', padding: '0 12px', background: '#F1F1F1', borderRight: '1px solid #D4D8DD', fontSize: '13px', fontWeight: 800, color: '#30363D', boxSizing: 'border-box' } }, label),
         React.createElement("div", { style: { padding: '4px 8px', minWidth: 0, boxSizing: 'border-box' } }, child));
     const dailyDateDeviceBlock = React.createElement("div", { style: { borderRight: '1px solid #C9CED4', minWidth: 0 } },
-        React.createElement(UnifiedDateRangeCards, { start: filters.start, end: filters.end, onChange: setDateRange, rangeLabel: '시행기간', startLabel: '시행시작일', endLabel: '시행종료일' }),
+        React.createElement(UnifiedDateRangeCards, { start: filters.start, end: filters.end, onChange: setDateRange, rangeLabel: '시행기간', startLabel: '시행시작일', endLabel: '시행종료일', labelWidth: '96px', dateMinWidth: '104px' }),
         dailyReportRow("장비명", React.createElement("select", {
             value: filters.device,
             onChange: e => { set('device', e.target.value); set('control', '전체'); setSelectedRunKey(''); },
             style: { ...inputStyle(), height: '34px', borderRadius: '2px' }
-        }, devices.map(v => React.createElement("option", { key: v, value: v }, v === '전체' ? '선택' : /\(sub\)/i.test(v) ? easyQcDeviceName(v) + '(SUB)' : easyQcDeviceName(v))))));
+        }, devices.map(v => React.createElement("option", { key: v, value: v }, v === '전체' ? '선택' : /\(sub\)/i.test(v) ? easyQcDeviceName(v) + '(SUB)' : easyQcDeviceName(v)))), '96px'));
     const dailyControlBlock = React.createElement("div", { style: { borderRight: '1px solid #C9CED4', minWidth: 0 } },
         dailyReportRow("Control(Lot)", React.createElement("select", {
             value: selectedDailyControl,
@@ -6214,15 +6258,15 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
             style: { ...inputStyle(), height: '34px', borderRadius: '2px', fontStyle: selectedDailyControl === '전체' ? 'italic' : 'normal', color: selectedDailyControl === '전체' ? '#8A929B' : '#30363D', background: filters.device === '전체' ? '#F7F7F7' : '#FFFFFF' }
         },
             React.createElement("option", { value: '전체' }, 'Control(Lot) 선택'),
-            dailyControlOptions.map(option => React.createElement("option", { key: option.key, value: option.key }, option.label))), '125px'),
+            dailyControlOptions.map(option => React.createElement("option", { key: option.key, value: option.key }, option.label))), '106px'),
         React.createElement("div", { style: { minHeight: '40px', borderTop: '1px solid #D4D8DD', background: '#FFFFFF' } }));
     const dailySearchBlock = React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F8F8F8', padding: '8px' } },
         React.createElement("button", {
             onClick: () => setSelectedRunKey(''),
-            style: { width: '88px', height: '36px', background: '#1B1D20', color: '#FFFFFF', border: '1px solid #17191C', fontSize: '13px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 10px rgba(30,20,20,.16)' }
+            style: { width: '76px', height: '36px', background: '#1B1D20', color: '#FFFFFF', border: '1px solid #17191C', fontSize: '13px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 10px rgba(30,20,20,.16)' }
         }, "⌕ 조회"));
     const filterBar = React.createElement("div", { className: 'qc-panel', style: { padding: 0, overflow: 'visible', position: 'relative', zIndex: 50, borderRadius: '4px', boxShadow: 'none', border: '1px solid #C9CED4', background: '#FFFFFF' } },
-        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '180px minmax(420px,1.05fr) minmax(360px,.9fr) 112px', alignItems: 'stretch', minHeight: '82px' } },
+        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '150px minmax(330px,1.15fr) minmax(250px,.85fr) 92px', alignItems: 'stretch', minHeight: '82px' } },
             React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid #C9CED4', background: '#F6F6F6', fontSize: '15px', fontWeight: 800, color: '#30363D' } }, "내부정도관리 조회"),
             dailyDateDeviceBlock,
             dailyControlBlock,
@@ -6728,6 +6772,15 @@ const SAFE_LJ_TEST_ALIASES = {
     'rf': 'rf', 'rf1': 'rf', 'rf2': 'rf', 'xc1009': 'rf',
     'rpr1': 'rpr', 'rpr2': 'rpr', 'hisens auto rpr1': 'rpr', 'hisens auto rpr2': 'rpr'
 };
+const LJ_LEVEL_ORDER = ['Level 1', 'Level 2', 'Level 3'];
+const ljLevelRank = value => {
+    const text = String(value || '').toLowerCase();
+    if (/3/.test(text)) return 3;
+    if (/2/.test(text)) return 2;
+    if (/1/.test(text)) return 1;
+    return 99;
+};
+const sortLjByLevel = rows => [...(Array.isArray(rows) ? rows : [])].sort((a, b) => ljLevelRank(a?.level || a?.label || a?._ljLevel) - ljLevelRank(b?.level || b?.label || b?._ljLevel));
 const unifiedLjDebugEnabled = () => typeof window !== 'undefined' && window.QC_LJ_DEBUG === true;
 function buildUnifiedLjChartData({ records = [], actionTemplates = [], testCode = '', testName = '', qcMaterial = '', analyzerFilter = '', dateRange = {}, levelMode = 'all', lotMode = 'all', chartId = '', debug = false, getTestCode = row => row.testCode || row.test_code || '', getTestName = row => row.testName || row.test_name || '', getQcMaterial = row => row.qcMaterial || row.qc_material || row.controlMaterialName || row.controlName || '', getAnalyzer = row => normalizeAnalyzerForDisplay(row), analyzerMatches = (row, filter) => !filter || filter === '전체' || getAnalyzer(row) === filter, getLot = row => row.qcLot || row.qc_lot || row.lot || '', getLevel = () => '', getTarget = row => row._targetMatch || null, targetBasis = qcTargetBasis, testAliasMap = SAFE_LJ_TEST_ALIASES } = {}) {
     const norm = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -6745,6 +6798,8 @@ function buildUnifiedLjChartData({ records = [], actionTemplates = [], testCode 
     const reject = reason => { excluded[reason] = (excluded[reason] || 0) + 1; return false; };
     const levelFromRaw = row => {
         const raw = norm(row.level || row.qcLevel || row.qc_level || row.controlLevel || row.control_level || '');
+        if (/(?:^|\b)(?:level\s*)?3\b|l3|qc3/.test(raw))
+            return 'Level 3';
         if (/(?:^|\b)(?:level\s*)?2\b|l2|qc2/.test(raw))
             return 'Level 2';
         if (/(?:^|\b)(?:level\s*)?1\b|l1|qc1/.test(raw))
@@ -6755,6 +6810,8 @@ function buildUnifiedLjChartData({ records = [], actionTemplates = [], testCode 
         const lot = String(getLot(row) || '').trim();
         if (!lot || !target)
             return '';
+        if (lot && target.level3Lot && lot === String(target.level3Lot))
+            return 'Level 3';
         if (lot && target.level2Lot && lot === String(target.level2Lot))
             return 'Level 2';
         if (lot && target.level1Lot && lot === String(target.level1Lot))
@@ -6763,6 +6820,8 @@ function buildUnifiedLjChartData({ records = [], actionTemplates = [], testCode 
     };
     const levelFromMaterialText = row => {
         const text = norm(`${getQcMaterial(row)} ${row.controlMaterial || ''} ${row.control_material || ''} ${row.controlName || ''} ${row.qcName || ''}`);
+        if (/(?:level\s*)?3\b|l3|qc3/.test(text))
+            return 'Level 3';
         if (/(?:level\s*)?2\b|l2|qc2/.test(text))
             return 'Level 2';
         if (/(?:level\s*)?1\b|l1|qc1/.test(text))
@@ -6771,6 +6830,8 @@ function buildUnifiedLjChartData({ records = [], actionTemplates = [], testCode 
     };
     const levelFromTarget = target => {
         const raw = norm(target?.level || target?.qcLevel || '');
+        if (raw.includes('3'))
+            return 'Level 3';
         if (raw.includes('2'))
             return 'Level 2';
         if (raw.includes('1'))
@@ -6851,7 +6912,7 @@ function buildUnifiedLjChartData({ records = [], actionTemplates = [], testCode 
             acc[key] = row;
         return acc;
     }, {})).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.time || '').localeCompare(String(b.time || '')) || String(a._ljLevel || '').localeCompare(String(b._ljLevel || '')));
-    const byLevel = { 'Level 1': latest.filter(row => row._ljLevel === 'Level 1'), 'Level 2': latest.filter(row => row._ljLevel === 'Level 2') };
+    const byLevel = Object.fromEntries(LJ_LEVEL_ORDER.map(level => [level, latest.filter(row => row._ljLevel === level)]));
     const stat = rows => {
         const vals = rows.map(row => row.value).filter(Number.isFinite);
         if (!vals.length)
@@ -6865,7 +6926,7 @@ function buildUnifiedLjChartData({ records = [], actionTemplates = [], testCode 
         rows: latest,
         rowsWithLevel,
         byLevel,
-        stats: { 'Level 1': stat(byLevel['Level 1']), 'Level 2': stat(byLevel['Level 2']) },
+        stats: Object.fromEntries(LJ_LEVEL_ORDER.map(level => [level, stat(byLevel[level])])),
         actionEvents: actionEventMarkersForRows(rowsWithLevel, actionTemplates),
         excluded
     };
@@ -7291,7 +7352,7 @@ function FullGraphScreen({ qcRows, selectedPart, setPage, goBackPage, graphBaseD
         const toY = z => py + (H - py * 2) * (1 - (clamp(z) + yLimit) / (yLimit * 2));
         const zFor = row => row._ljZ;
         const isTwoSdOut = row => Math.abs(zFor(row)) > 2;
-        const byLevel = { 'Level 1': rows.filter(r => r._ljLevel === 'Level 1'), 'Level 2': rows.filter(r => r._ljLevel === 'Level 2') };
+        const byLevel = Object.fromEntries(LJ_LEVEL_ORDER.map(level => [level, rows.filter(r => r._ljLevel === level)]));
         const westgardRuleMap = new Map();
         const addWestgardRule = (row, rule) => {
             if (!row || !rule)
@@ -7360,7 +7421,7 @@ function FullGraphScreen({ qcRows, selectedPart, setPage, goBackPage, graphBaseD
             if (!pos)
                 return;
             const tgt = tgtOf(row._ljLevel);
-            const tgtStr = tgt ? `${Number(tgt.mean).toFixed(3)}${Number.isFinite(tgt.min) && Number.isFinite(tgt.max) ? ` (${tgt.min}~${tgt.max})` : ''}` : '-';
+            const levelRows = byLevel[row._ljLevel] || [row]; const p = qcMeasurementPrecision(levelRows, 2); const tgtStr = tgt ? `${qcFormatRounded(tgt.mean, p)}${Number.isFinite(tgt.min) && Number.isFinite(tgt.max) ? ` (${qcFormatRounded(tgt.min, p)}~${qcFormatRounded(tgt.max, p)})` : ''}` : '-';
             const wgr = westgardTextFor(row);
             const txt = [`날짜: ${row.date}${row.time ? ` ${row.time}` : ''}`, `검사: ${group.displayName}`, `Level: ${row._ljLevel}`, `결과: ${row.value}${row.unit ? ` ${row.unit}` : ''}`, `LOT: ${row._ljLot || '-'}`, `Target: ${tgtStr}`, `SD위치: ${Number.isFinite(zFor(row)) ? zFor(row).toFixed(2) + 'SD' : '-'}`, wgr ? `Westgard: ${wgr}` : '', isTwoSdOut(row) ? '경고: ±2SD 벗어남' : ''].filter(Boolean).join('\n');
             setChartTooltip({ chartId, x: pos.x, y: pos.y, text: txt, color: levelColor[row._ljLevel] });
@@ -7370,7 +7431,7 @@ function FullGraphScreen({ qcRows, selectedPart, setPage, goBackPage, graphBaseD
             hideTip(); };
         const legendLine = level => {
             const s = stats[level];
-            return s ? `Mean ${s.mean.toFixed(3)} / SD ${s.sd.toFixed(3)}` : '';
+            return s ? `Mean ${qcFormatMeasuredStat(s.mean, byLevel[level], 2)} / SD ${qcFormatMeasuredStat(s.sd, byLevel[level], 2)}` : '';
         };
         return React.createElement("div", { key: group.key, "data-lj-chart-panel": true, className: 'qc-panel', style: { padding: '0', position: 'relative', border: 'none', background: 'transparent', boxShadow: 'none' }, onPointerLeave: hideTip, onMouseLeave: hideTip },
             React.createElement("div", { style: { background: fullGraphChartTheme.panel, border: `1px solid ${fullGraphChartTheme.border}`, borderRadius: '6px', boxShadow: 'none', padding: '14px', overflow: 'hidden' } },
@@ -7437,7 +7498,7 @@ function FullGraphScreen({ qcRows, selectedPart, setPage, goBackPage, graphBaseD
                 React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'minmax(260px,1.15fr) minmax(230px,.85fr)', gap: '12px', marginTop: '14px' } },
                     React.createElement("div", { style: { border: `1px solid ${fullGraphChartTheme.border}`, borderRadius: '5px', background: '#F5F6F7', padding: '10px' } },
                         React.createElement("div", { style: { fontSize: '11px', fontWeight: 950, color: fullGraphChartTheme.ink, marginBottom: '9px' } }, "Level Series"),
-                        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '8px' } }, ['Level 1', 'Level 2'].map(level => byLevel[level].length > 0 && React.createElement("div", { key: level, style: { background: '#FFFFFF', border: `1px solid ${fullGraphChartTheme.border}`, borderRadius: '4px', padding: '9px 10px', boxShadow: 'none' } },
+                        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '8px' } }, LJ_LEVEL_ORDER.map(level => byLevel[level].length > 0 && React.createElement("div", { key: level, style: { background: '#FFFFFF', border: `1px solid ${fullGraphChartTheme.border}`, borderRadius: '4px', padding: '9px 10px', boxShadow: 'none' } },
                             React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 950, color: fullGraphChartTheme.ink } },
                                 React.createElement("span", { style: { width: '10px', height: '10px', borderRadius: '999px', background: levelColor[level], boxShadow: '0 0 0 3px rgba(226,232,240,.65)' } }),
                                 level),
@@ -7665,11 +7726,11 @@ function MonthlyTrendScreen({ selectedPart, equipmentList = [], controlMaterials
                 (!selectedTests.length || selectedTests.includes(r.testName || r.testCode)));
             const groups = {};
             rows.forEach(r => { const k = [r.deviceName, r.controlMaterialName, r.testName || r.testCode].join('|'); if (!groups[k])
-                groups[k] = { deviceName: r.deviceName, controlMaterialName: r.controlMaterialName, testName: r.testName || r.testCode, source: 'json', skipped: importStats.skipped, months: {}, count: 0 }; const month = (r.date || '').slice(0, 7); if (!month)
+                groups[k] = { deviceName: r.deviceName, controlMaterialName: r.controlMaterialName, testName: r.testName || r.testCode, source: 'json', skipped: importStats.skipped, months: {}, count: 0, precisionByLevel: {} }; groups[k].precisionByLevel[r.level] = Math.max(groups[k].precisionByLevel[r.level] ?? 0, qcMeasurementPrecision([r], 0)); const month = (r.date || '').slice(0, 7); if (!month)
                 return; groups[k].count += 1; if (!groups[k].months[month])
                 groups[k].months[month] = {}; if (!groups[k].months[month][r.level])
                 groups[k].months[month][r.level] = []; groups[k].months[month][r.level].push(r.value); });
-            return Object.values(groups).map(g => { const rows = Object.keys(g.months).sort().map(month => { const levels = g.months[month]; const l1 = statOf(levels['Level 1'] || []), l2 = statOf(levels['Level 2'] || []), l3 = statOf(levels['Level 3'] || []); return { month, level1Mean: l1.mean, level1Sd: l1.sd, level1Cv: l1.cv, level1N: l1.n, level2Mean: l2.mean, level2Sd: l2.sd, level2Cv: l2.cv, level2N: l2.n, level3Mean: l3.mean, level3Sd: l3.sd, level3Cv: l3.cv, level3N: l3.n, allowedCvLevel1: 0, allowedCvLevel2: 0 }; }); return { ...g, rows }; }).filter(g => g.rows.length);
+            return Object.values(groups).map(g => { const rows = Object.keys(g.months).sort().map(month => { const levels = g.months[month]; const l1 = statOf(levels['Level 1'] || []), l2 = statOf(levels['Level 2'] || []), l3 = statOf(levels['Level 3'] || []); return { month, level1Mean: l1.mean, level1Sd: l1.sd, level1Cv: l1.cv, level1N: l1.n, level1Precision: g.precisionByLevel?.['Level 1'] ?? 0, level2Mean: l2.mean, level2Sd: l2.sd, level2Cv: l2.cv, level2N: l2.n, level2Precision: g.precisionByLevel?.['Level 2'] ?? 0, level3Mean: l3.mean, level3Sd: l3.sd, level3Cv: l3.cv, level3N: l3.n, level3Precision: g.precisionByLevel?.['Level 3'] ?? 0, allowedCvLevel1: 0, allowedCvLevel2: 0 }; }); return { ...g, rows, level1Precision: g.precisionByLevel?.['Level 1'] ?? 0, level2Precision: g.precisionByLevel?.['Level 2'] ?? 0, level3Precision: g.precisionByLevel?.['Level 3'] ?? 0 }; }).filter(g => g.rows.length);
         }
         if (normalizeQcPartName(selectedPart) && normalizeQcPartName(selectedPart) !== '임상화학')
             return [];
@@ -7683,13 +7744,13 @@ function MonthlyTrendScreen({ selectedPart, equipmentList = [], controlMaterials
     } setMaterialDropdownOpen(false); setTestDropdownOpen(false); setTimeout(() => window.print(), 0); };
     const avg = (arr, k) => arr.length ? arr.reduce((a, b) => a + (Number(b[k]) || 0), 0) / arr.length : 0;
     const sdOf = (arr, k) => { const m = avg(arr, k); return arr.length > 1 ? Math.sqrt(arr.reduce((a, b) => a + (Number(b[k]) - m) ** 2, 0) / (arr.length - 1)) : 0; };
-    const cvCell = (cv, allowed) => allowed ? React.createElement("span", { style: { display: 'inline-flex', justifyContent: 'center', minWidth: '92px', padding: '3px 6px', borderRadius: '5px', fontWeight: 800, color: cv > allowed ? T.warn : T.ok, background: cv > allowed ? T.warnLt : T.okLt, border: `1px solid ${cv > allowed ? 'rgba(245,158,11,.28)' : 'rgba(5,150,105,.22)'}` } },
-        cv.toFixed(2),
+    const cvCell = (cv, allowed, precision = 2) => allowed ? React.createElement("span", { style: { display: 'inline-flex', justifyContent: 'center', minWidth: '92px', padding: '3px 6px', borderRadius: '5px', fontWeight: 800, color: cv > allowed ? T.warn : T.ok, background: cv > allowed ? T.warnLt : T.okLt, border: `1px solid ${cv > allowed ? 'rgba(245,158,11,.28)' : 'rgba(5,150,105,.22)'}` } },
+        qcFormatRounded(cv, precision),
         " ",
         React.createElement("span", { style: { color: T.dim, fontWeight: 700, marginLeft: '4px' } },
             "(\uD5C8\uC6A9 ",
-            allowed.toFixed(2),
-            ")")) : React.createElement("span", { style: { fontFamily: 'monospace', fontWeight: 800 } }, cv ? cv.toFixed(2) : '-');
+            qcFormatRounded(allowed, precision),
+            ")")) : React.createElement("span", { style: { fontFamily: 'monospace', fontWeight: 800 } }, cv ? qcFormatRounded(cv, precision) : '-');
     const chart = (rows, title, key, color) => React.createElement("div", { className: 'qc-panel', style: { padding: '12px' } },
         React.createElement("div", { style: { fontSize: '12px', fontWeight: 900, marginBottom: '10px', color: T.txt } }, title),
         React.createElement("div", { style: { height: '150px', display: 'flex', alignItems: 'end', gap: '10px', borderLeft: `1px solid ${T.bdr}`, borderBottom: `1px solid ${T.bdr}`, padding: '8px 8px 0 8px' } }, rows.map(r => { const max = Math.max(...rows.map(x => Number(x[key]) || 0), 1); const h = Math.max(12, (Number(r[key]) || 0) / max * 118); return React.createElement("div", { key: r.month, style: { flex: 1, textAlign: 'center' } },
@@ -7725,6 +7786,20 @@ function MonthlyTrendScreen({ selectedPart, equipmentList = [], controlMaterials
                 rep.useStartDate),
             hasChange && lotChangeBadge(label.startsWith('Cal') ? 'Cal/QC' : '시약')));
     };
+    const trendRowPrecision = (row, level) => {
+        const stored = Number(row?.[`level${level}Precision`]);
+        if (Number.isInteger(stored) && stored >= 0)
+            return Math.min(6, stored);
+        const inferred = [row?.[`level${level}Mean`], row?.[`level${level}Sd`]].map(qcDecimalPlaces).filter(Number.isInteger);
+        return inferred.length ? Math.min(6, Math.max(...inferred)) : 2;
+    };
+    const trendGroupPrecision = (group, level) => {
+        const stored = Number(group?.[`level${level}Precision`]);
+        if (Number.isInteger(stored) && stored >= 0)
+            return Math.min(6, stored);
+        const values = (group?.rows || []).map(row => trendRowPrecision(row, level));
+        return values.length ? Math.max(...values) : 2;
+    };
     const resultCard = g => {
         const lotMatch = matchLotsForTrendCard(g, importedReagentLots);
         const hasLotData = importedReagentLots.length > 0;
@@ -7749,28 +7824,28 @@ function MonthlyTrendScreen({ selectedPart, equipmentList = [], controlMaterials
             React.createElement(DataTable, { headers: ['월', 'Level 1 Mean', 'Level 1 SD', 'Level 1 CV', 'Level 2 Mean', 'Level 2 SD', 'Level 2 CV'] },
                 g.rows.map((r, i) => React.createElement("tr", { key: r.month, style: { borderBottom: `1px solid ${T.bdr}`, background: i % 2 === 0 ? T.white : T.sur2 } },
                     React.createElement("td", { style: td('mono bold') }, r.month),
-                    React.createElement("td", { style: td('mono bold') }, r.level1N === 0 ? '-' : r.level1Mean.toFixed(2)),
-                    React.createElement("td", { style: td('mono muted') }, r.level1N < 2 ? '-' : r.level1Sd.toFixed(2)),
-                    React.createElement("td", { style: td() }, r.level1N === 0 ? '-' : cvCell(r.level1Cv, r.allowedCvLevel1)),
-                    React.createElement("td", { style: td('mono bold') }, r.level2N === 0 ? '-' : r.level2Mean.toFixed(2)),
-                    React.createElement("td", { style: td('mono muted') }, r.level2N < 2 ? '-' : r.level2Sd.toFixed(2)),
-                    React.createElement("td", { style: td() }, r.level2N === 0 ? '-' : cvCell(r.level2Cv, r.allowedCvLevel2)))),
+                    React.createElement("td", { style: td('mono bold') }, r.level1N === 0 ? '-' : qcFormatRounded(r.level1Mean, trendRowPrecision(r, 1))),
+                    React.createElement("td", { style: td('mono muted') }, r.level1N < 2 ? '-' : qcFormatRounded(r.level1Sd, trendRowPrecision(r, 1))),
+                    React.createElement("td", { style: td() }, r.level1N === 0 ? '-' : cvCell(r.level1Cv, r.allowedCvLevel1, trendRowPrecision(r, 1))),
+                    React.createElement("td", { style: td('mono bold') }, r.level2N === 0 ? '-' : qcFormatRounded(r.level2Mean, trendRowPrecision(r, 2))),
+                    React.createElement("td", { style: td('mono muted') }, r.level2N < 2 ? '-' : qcFormatRounded(r.level2Sd, trendRowPrecision(r, 2))),
+                    React.createElement("td", { style: td() }, r.level2N === 0 ? '-' : cvCell(r.level2Cv, r.allowedCvLevel2, trendRowPrecision(r, 2))))),
                 React.createElement("tr", { style: { background: T.accLt, borderTop: `1px solid ${T.bdr}` } },
                     React.createElement("td", { style: td('bold') }, "Mean"),
-                    React.createElement("td", { style: td('mono bold') }, avg(g.rows, 'level1Mean').toFixed(2)),
-                    React.createElement("td", { style: td('mono muted') }, avg(g.rows, 'level1Sd').toFixed(2)),
-                    React.createElement("td", { style: td('mono muted') }, avg(g.rows, 'level1Cv').toFixed(2)),
-                    React.createElement("td", { style: td('mono bold') }, avg(g.rows, 'level2Mean').toFixed(2)),
-                    React.createElement("td", { style: td('mono muted') }, avg(g.rows, 'level2Sd').toFixed(2)),
-                    React.createElement("td", { style: td('mono muted') }, avg(g.rows, 'level2Cv').toFixed(2))),
+                    React.createElement("td", { style: td('mono bold') }, qcFormatRounded(avg(g.rows, 'level1Mean'), trendGroupPrecision(g, 1))),
+                    React.createElement("td", { style: td('mono muted') }, qcFormatRounded(avg(g.rows, 'level1Sd'), trendGroupPrecision(g, 1))),
+                    React.createElement("td", { style: td('mono muted') }, qcFormatRounded(avg(g.rows, 'level1Cv'), trendGroupPrecision(g, 1))),
+                    React.createElement("td", { style: td('mono bold') }, qcFormatRounded(avg(g.rows, 'level2Mean'), trendGroupPrecision(g, 2))),
+                    React.createElement("td", { style: td('mono muted') }, qcFormatRounded(avg(g.rows, 'level2Sd'), trendGroupPrecision(g, 2))),
+                    React.createElement("td", { style: td('mono muted') }, qcFormatRounded(avg(g.rows, 'level2Cv'), trendGroupPrecision(g, 2)))),
                 React.createElement("tr", { style: { background: T.sur2 } },
                     React.createElement("td", { style: td('bold') }, "SD"),
-                    React.createElement("td", { style: td('mono muted') }, sdOf(g.rows, 'level1Mean').toFixed(2)),
-                    React.createElement("td", { style: td('mono muted') }, sdOf(g.rows, 'level1Sd').toFixed(2)),
-                    React.createElement("td", { style: td('mono muted') }, sdOf(g.rows, 'level1Cv').toFixed(2)),
-                    React.createElement("td", { style: td('mono muted') }, sdOf(g.rows, 'level2Mean').toFixed(2)),
-                    React.createElement("td", { style: td('mono muted') }, sdOf(g.rows, 'level2Sd').toFixed(2)),
-                    React.createElement("td", { style: td('mono muted') }, sdOf(g.rows, 'level2Cv').toFixed(2)))),
+                    React.createElement("td", { style: td('mono muted') }, qcFormatRounded(sdOf(g.rows, 'level1Mean'), trendGroupPrecision(g, 1))),
+                    React.createElement("td", { style: td('mono muted') }, qcFormatRounded(sdOf(g.rows, 'level1Sd'), trendGroupPrecision(g, 1))),
+                    React.createElement("td", { style: td('mono muted') }, qcFormatRounded(sdOf(g.rows, 'level1Cv'), trendGroupPrecision(g, 1))),
+                    React.createElement("td", { style: td('mono muted') }, qcFormatRounded(sdOf(g.rows, 'level2Mean'), trendGroupPrecision(g, 2))),
+                    React.createElement("td", { style: td('mono muted') }, qcFormatRounded(sdOf(g.rows, 'level2Sd'), trendGroupPrecision(g, 2))),
+                    React.createElement("td", { style: td('mono muted') }, qcFormatRounded(sdOf(g.rows, 'level2Cv'), trendGroupPrecision(g, 2))))),
             React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: '10px', marginTop: '10px' } },
                 chart(g.rows, 'Mean Level 1', 'level1Mean', T.acc),
                 chart(g.rows, 'Mean Level 2', 'level2Mean', T.acc2)));
@@ -8277,19 +8352,19 @@ function MultiGraphScreen({ qcRows, selectedPart, actionTemplates = [], dailyQcO
                                     React.createElement("span", { style: { width: '10px', height: '10px', borderRadius: '999px', background: multiGraphChartTheme.level['Level 1'], boxShadow: '0 0 0 3px rgba(226,232,240,.65)' } }),
                                     "Level 1"),
                                 React.createElement("div", { style: { marginTop: '7px', fontSize: '11px', fontWeight: 800, color: multiGraphChartTheme.muted, lineHeight: 1.45 } },
-                                    `Mean ${s1.mean.toFixed(3)} / SD ${s1.sd.toFixed(3)}`)),
+                                    `Mean ${qcFormatMeasuredStat(s1.mean, pts1, 2)} / SD ${qcFormatMeasuredStat(s1.sd, pts1, 2)}`)),
                             s2 && React.createElement("div", { style: { background: '#FFFFFF', border: `1px solid ${multiGraphChartTheme.border}`, borderRadius: '4px', padding: '9px 10px', boxShadow: 'none' } },
                                 React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 950, color: multiGraphChartTheme.ink } },
                                     React.createElement("span", { style: { width: '10px', height: '10px', borderRadius: '999px', background: multiGraphChartTheme.level['Level 2'], boxShadow: '0 0 0 3px rgba(226,232,240,.65)' } }),
                                     "Level 2"),
                                 React.createElement("div", { style: { marginTop: '7px', fontSize: '11px', fontWeight: 800, color: multiGraphChartTheme.muted, lineHeight: 1.45 } },
-                                    `Mean ${s2.mean.toFixed(3)} / SD ${s2.sd.toFixed(3)}`)),
+                                    `Mean ${qcFormatMeasuredStat(s2.mean, pts2, 2)} / SD ${qcFormatMeasuredStat(s2.sd, pts2, 2)}`)),
                             s3 && React.createElement("div", { style: { background: '#FFFFFF', border: `1px solid ${multiGraphChartTheme.border}`, borderRadius: '4px', padding: '9px 10px', boxShadow: 'none' } },
                                 React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 950, color: multiGraphChartTheme.ink } },
                                     React.createElement("span", { style: { width: '10px', height: '10px', borderRadius: '999px', background: multiGraphChartTheme.level['Level 3'], boxShadow: '0 0 0 3px rgba(226,232,240,.65)' } }),
                                     "Level 3"),
                                 React.createElement("div", { style: { marginTop: '7px', fontSize: '11px', fontWeight: 800, color: multiGraphChartTheme.muted, lineHeight: 1.45 } },
-                                    `Mean ${s3.mean.toFixed(3)} / SD ${s3.sd.toFixed(3)}`)))),
+                                    `Mean ${qcFormatMeasuredStat(s3.mean, pts3, 2)} / SD ${qcFormatMeasuredStat(s3.sd, pts3, 2)}`)))),
                     React.createElement("div", { style: { border: `1px solid ${multiGraphChartTheme.border}`, borderRadius: '5px', background: '#F5F6F7', padding: '10px' } },
                         React.createElement("div", { style: { fontSize: '11px', fontWeight: 950, color: multiGraphChartTheme.ink, marginBottom: '9px' } }, "Chart Basis"),
                         React.createElement("div", { style: { display: 'flex', gap: '7px', flexWrap: 'wrap' } },
@@ -9617,10 +9692,22 @@ function ItemReportScreen({ qcRows, dailySourceRows = [], dailyQcOfficialModel =
         return candidates;
     }, [controlMaterials, selectedPart, labTargets, targetProfiles]);
     const itemReportResolveTargetForLj = row => {
+        const rowLotForTarget = itemReportLotKey(itemReportRowLot(row));
+        const rowLevelForTarget = itemReportControlLevelForChartRow(row) || itemReportControlLevelForRow(row);
+        const directTargetMatchesRowLevel = target => {
+            if (!target || !qcTargetBasis(target, row)) return false;
+            const explicitTargetLevel = itemReportExplicitRowLevel({ level: target.level || target.qcLevel || target.controlLevel || '' });
+            if (explicitTargetLevel && rowLevelForTarget && explicitTargetLevel !== rowLevelForTarget) return false;
+            if (!rowLotForTarget) return true;
+            const levelLot = rowLevelForTarget === 'L1' ? target.level1Lot : rowLevelForTarget === 'L2' ? target.level2Lot : rowLevelForTarget === 'L3' ? target.level3Lot : '';
+            if (levelLot) return itemReportLotKey(levelLot) === rowLotForTarget;
+            const directLots = [target.qcLot, target.lot, target.lotNo, target.controlLot].map(itemReportLotKey).filter(Boolean);
+            return !directLots.length || directLots.includes(rowLotForTarget);
+        };
         const tm = row?._targetMatch || null;
-        if (tm && qcTargetBasis(tm, row))
+        if (directTargetMatchesRowLevel(tm))
             return tm;
-        if (row && qcTargetBasis(row, row))
+        if (row && directTargetMatchesRowLevel(row))
             return row;
         if (itemReportIsRprRow(row) && itemReportCleanLot(itemReportRowLot(row)) === 'H612') {
             const level = itemReportControlLevelForRow(row);
@@ -9941,13 +10028,15 @@ function ItemReportScreen({ qcRows, dailySourceRows = [], dailyQcOfficialModel =
                 target.level === targetLevel) || null;
         };
         const itemReportTargetReferenceForRow = (row, chartLevel) => {
-            const directTarget = row?._ljTarget || itemReportResolveTargetForLj(row);
-            const directBasis = qcTargetBasis(directTarget || {}, row);
-            if (directBasis)
-                return { target: directTarget, basis: directBasis };
             const pcccTarget = itemReportPcccReferenceTargetForRow(row, chartLevel);
             const pcccBasis = qcTargetBasis(pcccTarget || {}, row);
-            return pcccBasis ? { target: pcccTarget, basis: pcccBasis } : null;
+            if (pcccBasis)
+                return { target: pcccTarget, basis: pcccBasis };
+            const directTarget = row?._ljTarget || itemReportResolveTargetForLj(row);
+            const directTargetLevel = itemReportExplicitRowLevel({ level: directTarget?.level || directTarget?.qcLevel || directTarget?.controlLevel || '' });
+            const requestedLevel = chartLevel === 'Level 1' ? 'L1' : chartLevel === 'Level 2' ? 'L2' : chartLevel === 'Level 3' ? 'L3' : '';
+            const directBasis = (!directTargetLevel || !requestedLevel || directTargetLevel === requestedLevel) ? qcTargetBasis(directTarget || {}, row) : null;
+            return directBasis ? { target: directTarget, basis: directBasis } : null;
         };
         const itemReportTargetReferences = ['Level 1', 'Level 2', 'Level 3'].map(label => {
             const row = chartRowsSource.find(item => item._ljLevel === label);
@@ -10014,7 +10103,7 @@ function ItemReportScreen({ qcRows, dailySourceRows = [], dailyQcOfficialModel =
             acc[level] = dailyStyleRows.filter(row => row._ljLevel === level);
             return acc;
         }, {});
-        const chartLevelSeries = ['Level 1', 'Level 2', 'Level 3'].map(label => {
+        const chartLevelSeries = LJ_LEVEL_ORDER.map(label => {
             const points = dailyStyleByLevel[label] || [];
             if (!points.length)
                 return null;
@@ -10036,19 +10125,10 @@ function ItemReportScreen({ qcRows, dailySourceRows = [], dailyQcOfficialModel =
                 cv
             };
         }).filter(Boolean);
-        const sectionChartLotSummary = (() => {
-            const seen = new Set();
-            return (chartRowsSource.length ? chartRowsSource : sectionNumeric).map(row => {
-                const levelKey = itemReportControlLevelForChartRow(row, sectionRows);
-                const level = levelKey === 'L1' ? 'Level 1' : levelKey === 'L2' ? 'Level 2' : levelKey === 'L3' ? 'Level 3' : itemReportLevelKey(row);
-                const lot = displayText(row.qcLot || row.controlLot || row.lotNo || '');
-                const label = [level || 'Level', lot ? `LOT ${lot}` : 'LOT -'].join(' ');
-                if (seen.has(label))
-                    return '';
-                seen.add(label);
-                return label;
-            }).filter(Boolean).join(' / ');
-        })();
+        const sectionChartLotSummary = sortLjByLevel(chartLevelSeries).map(series => {
+            const lot = displayText(series.lots?.[0] || '');
+            return [series.label, lot ? `LOT ${lot}` : 'LOT -'].join(' ');
+        }).filter(Boolean).join(' / ');
         return {
             rows: itemReportResultRows,
             numeric: itemReportResultRows,
@@ -10090,6 +10170,8 @@ function ItemReportScreen({ qcRows, dailySourceRows = [], dailyQcOfficialModel =
             level: { 'Level 1': '#0B1220', 'Level 2': '#2563EB', 'Level 3': '#6D28D9' }
         };
         const levelColor = { ...(sectionInfo.dailyStyleLevelColor || {}), ...chartTheme.level };
+        const orderedLevelSeries = sortLjByLevel(sectionInfo.levelSeries || []);
+        const orderedTargetReferences = sortLjByLevel(sectionInfo.targetReferences || []);
         const toXDate = date => {
             const idx = Math.max(0, axisDates.indexOf(date));
             return px + (axisDates.length > 1 ? (W - px * 2) * idx / (axisDates.length - 1) : (W - px * 2) / 2);
@@ -10107,7 +10189,9 @@ function ItemReportScreen({ qcRows, dailySourceRows = [], dailyQcOfficialModel =
             const max = Number(row._ljTargetMax ?? row.targetMax ?? row.max);
             if (!Number.isFinite(mean))
                 return '-';
-            return `${mean.toFixed(3)}${Number.isFinite(min) && Number.isFinite(max) ? ` (${min}~${max})` : ''}`;
+            const precisionRows = byLevel[row._ljLevel] || [row];
+            const precision = qcMeasurementPrecision(precisionRows, 2);
+            return `${qcFormatRounded(mean, precision)}${Number.isFinite(min) && Number.isFinite(max) ? ` (${qcFormatRounded(min, precision)}~${qcFormatRounded(max, precision)})` : ''}`;
         };
         const itemReportTooltipPosition = (event, cx, cy) => {
             const panelRect = event.currentTarget.closest('[data-lj-chart-panel]')?.getBoundingClientRect();
@@ -10216,30 +10300,23 @@ function ItemReportScreen({ qcRows, dailySourceRows = [], dailyQcOfficialModel =
                 React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'minmax(260px,1.15fr) minmax(230px,.85fr)', gap: '12px', marginTop: '14px' } },
                     React.createElement("div", { style: { border: `1px solid ${chartTheme.border}`, borderRadius: '5px', background: '#F5F6F7', padding: '10px' } },
                         React.createElement("div", { style: { fontSize: '11px', fontWeight: 950, color: chartTheme.ink, marginBottom: '9px' } }, "Level Series"),
-                        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '8px' } }, sectionInfo.levelSeries.map(series => React.createElement("div", { key: series.level, style: { background: '#FFFFFF', border: `1px solid ${chartTheme.border}`, borderRadius: '4px', padding: '9px 10px', boxShadow: 'none' } },
+                        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '8px' } }, orderedLevelSeries.map(series => React.createElement("div", { key: series.level, style: { background: '#FFFFFF', border: `1px solid ${chartTheme.border}`, borderRadius: '4px', padding: '9px 10px', boxShadow: 'none' } },
                             React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 950, color: chartTheme.ink } },
                                 React.createElement("span", { style: { width: '10px', height: '10px', borderRadius: '999px', background: levelColor[series.label] || series.color, boxShadow: '0 0 0 3px rgba(226,232,240,.65)' } }),
                                 series.label),
                             React.createElement("div", { style: { marginTop: '7px', fontSize: '11px', fontWeight: 800, color: chartTheme.muted, lineHeight: 1.45 } },
-                                `Mean ${Number(series.mean).toFixed(3)} / SD ${Number(series.sd).toFixed(3)}`))))),
+                                `Mean ${qcFormatMeasuredStat(series.mean, series.points, 2)} / SD ${qcFormatMeasuredStat(series.sd, series.points, 2)}`))))),
                     React.createElement("div", { style: { border: `1px solid ${chartTheme.border}`, borderRadius: '5px', background: '#F5F6F7', padding: '10px' } },
                         React.createElement("div", { style: { fontSize: '11px', fontWeight: 950, color: chartTheme.ink, marginBottom: '9px' } }, "Chart Basis"),
-                        React.createElement("div", { style: { display: 'flex', gap: '7px', flexWrap: 'wrap' } },
-                            infoPill('target_basis', React.createElement(React.Fragment, null, "\uADF8\uB798\uD504 \uAE30\uC900: Target \uC124\uC815\uAC12"), 'blue'),
-                            infoPill('stat_basis', React.createElement(React.Fragment, null, "\uD1B5\uACC4 \uAE30\uC900: \uC870\uD68C\uAE30\uAC04 \uC2E4\uC81C \uACB0\uACFC"), 'muted'),
-                            infoPill('outlier', React.createElement(React.Fragment, null, "\uC774\uD0C8 \uD45C\uC2DC = \u00B12SD"), 'danger'),
-                            sectionInfo.targetReferences?.map(ref => infoPill(`target_${ref.level}`, React.createElement(React.Fragment, null,
-                                "\uC124\uC815 ",
-                                ref.level,
-                                " Target ",
-                                Number(ref.mean).toFixed(3),
-                                " / \uD5C8\uC6A9\uBC94\uC704 ",
-                                Number(ref.min).toFixed(3),
-                                "~",
-                                Number(ref.max).toFixed(3)), 'muted')),
-                            !!sectionInfo.sdUnavailableLevels?.length && infoPill('sd_unavailable', React.createElement(React.Fragment, null,
-                                "SD \uACC4\uC0B0 \uBD88\uAC00: ",
-                                sectionInfo.sdUnavailableLevels.join(', ')), 'warn'))))));
+                        React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: '7px' } },
+                            React.createElement("div", { style: { display: 'flex', gap: '7px', flexWrap: 'wrap' } },
+                                infoPill('target_basis', React.createElement(React.Fragment, null, "\uADF8\uB798\uD504 \uAE30\uC900: Target \uC124\uC815\uAC12"), 'blue'),
+                                infoPill('stat_basis', React.createElement(React.Fragment, null, "\uD1B5\uACC4 \uAE30\uC900: \uC870\uD68C\uAE30\uAC04 \uC2E4\uC81C \uACB0\uACFC"), 'muted'),
+                                infoPill('outlier', React.createElement(React.Fragment, null, "\uC774\uD0C8 \uD45C\uC2DC = \u00B12SD"), 'danger')),
+                            !!orderedTargetReferences.length && React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr', gap: '6px' } }, orderedTargetReferences.map(ref => infoPill(`target_${ref.level}`, React.createElement(React.Fragment, null,
+                                "\uC124\uC815 ", ref.level, " Target ", qcFormatRounded(ref.mean, qcMeasurementPrecision((orderedLevelSeries.find(series => series.label === ref.level) || {}).points || [], 2)), " / \uD5C8\uC6A9\uBC94\uC704 ", qcFormatRounded(ref.min, qcMeasurementPrecision((orderedLevelSeries.find(series => series.label === ref.level) || {}).points || [], 2)), "~", qcFormatRounded(ref.max, qcMeasurementPrecision((orderedLevelSeries.find(series => series.label === ref.level) || {}).points || [], 2))), 'muted'))),
+                            !!sectionInfo.sdUnavailableLevels?.length && React.createElement("div", null, infoPill('sd_unavailable', React.createElement(React.Fragment, null,
+                                "SD \uACC4\uC0B0 \uBD88\uAC00: ", sectionInfo.sdUnavailableLevels.join(', ')), 'warn')))))));
     };
     const itemReportCalendar = (() => {
         if (!itemReportDatePicker.field)
@@ -10369,14 +10446,10 @@ function ItemReportScreen({ qcRows, dailySourceRows = [], dailyQcOfficialModel =
             React.createElement("span", { style: { flex: '1 1 260px' } }, itemReportStatusMessage)),
         React.createElement("div", { "data-item-report-print-content": "1", style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
             itemReportRequiresDevice ? section('LJ 차트', React.createElement(Empty, { text: '\uC7A5\uBE44\uB97C \uBA3C\uC800 \uC120\uD0DD\uD558\uC138\uC694.' })) : !appliedItemReportQuery ? section('LJ 차트', React.createElement(Empty, { text: itemReportInitialText })) : !appliedControlGroups.length ? section('LJ 차트', React.createElement(Empty, { text: 'Control(Lot)\uC744 \uC120\uD0DD\uD558\uC138\uC694' })) : !selectedItemReportTestOptions.length ? section('LJ 차트', React.createElement(Empty, { text: '\uAC80\uC0AC\uD56D\uBAA9\uC744 \uC120\uD0DD\uD558\uC138\uC694' })) : noData ? section('LJ 차트', React.createElement(Empty, { text: '\uC870\uD68C\uB41C \uB370\uC774\uD130 \uC5C6\uC74C' })) : itemReportSections.map(sectionData => {
-            const sectionCollapsed = itemReportManyAppliedTests && !expandedItemReportSections.includes(sectionData.testKey);
+            const sectionCollapsed = false;
             const sectionInfo = sectionCollapsed ? null : buildItemReportSectionData(sectionData);
             return React.createElement("div", { key: sectionData.testKey, "data-item-report-test-section": sectionData.testKey, style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
-                itemReportManyAppliedTests && section(sectionData.label, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between', flexWrap: 'wrap' } },
-                    React.createElement("div", { style: { fontSize: '12px', fontWeight: 800, color: T.txt2 } },
-                        sectionData.rows.length,
-                        "\uAC74"),
-                    React.createElement("button", { type: 'button', onClick: () => toggleItemReportSection(sectionData.testKey), style: { height: '30px', background: sectionCollapsed ? T.acc : T.white, color: sectionCollapsed ? T.white : T.txt2, border: `1px solid ${sectionCollapsed ? T.acc : T.bdr}`, borderRadius: '7px', padding: '0 11px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' } }, sectionCollapsed ? '펼치기' : '접기'))),
+
                 !sectionCollapsed && React.createElement(React.Fragment, null,
                     itemReportShowGraph && section(`LJ 차트`, sectionInfo.numeric.length < 1 ? React.createElement(Empty, { text: '\uCC28\uD2B8\uB97C \uD45C\uC2DC\uD560 \uB370\uC774\uD130\uAC00 \uBD80\uC871\uD569\uB2C8\uB2E4' }) : !sectionInfo.levelSeries.length ? React.createElement(Empty, { text: 'Level\uC774 \uD655\uC778\uB41C \uCC28\uD2B8 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4' }) : renderItemReportDailyStyleLjChart(sectionInfo), sectionInfo.chartLotSummary || appliedControlLabel || null),
                     itemReportShowDaily && section(`${sectionData.label} 일별 QC 결과표`, React.createElement(DataTable, { headers: ['날짜', '회차', 'Level 1 결과', '판정', 'Level 2 결과', '판정', 'Level 3 결과', '판정', '조치'] }, sectionInfo.setRows.map((group, i) => { const l1 = itemReportLevelCell(group, 'L1'), l2 = itemReportLevelCell(group, 'L2'), l3 = itemReportLevelCell(group, 'L3'); return React.createElement("tr", { key: `${sectionData.testKey}_${group.date}_${group.time}_${i}`, onClick: () => setSelectedId(group.rows[0]?.id || ''), style: { borderBottom: `1px solid ${T.bdr}`, background: i % 2 === 0 ? T.white : T.sur2, cursor: 'pointer' } },
@@ -10400,7 +10473,7 @@ function ItemReportScreen({ qcRows, dailySourceRows = [], dailyQcOfficialModel =
                             React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 900, color: T.txt2, marginBottom: '8px' } },
                                 React.createElement("span", { style: { width: '16px', height: '3px', borderRadius: '999px', background: series.color, display: 'inline-block' } }),
                                 series.label),
-                            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '6px' } }, [['N', series.n], ['Mean', series.mean.toFixed(3)], ['SD', series.sd.toFixed(3)], ['CV', `${series.cv ? series.cv.toFixed(1) : '0.0'}%`]].map(([label, value]) => React.createElement("div", { key: label },
+                            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '6px' } }, [['N', series.n], ['Mean', qcFormatMeasuredStat(series.mean, series.points, 2)], ['SD', qcFormatMeasuredStat(series.sd, series.points, 2)], ['CV', `${qcFormatMeasuredStat(series.cv || 0, series.points, 2)}%`]].map(([label, value]) => React.createElement("div", { key: label },
                                 React.createElement("div", { style: { fontSize: '10px', color: T.dim, fontWeight: 700 } }, label),
                                 React.createElement("div", { style: { fontSize: '14px', fontWeight: 800, fontFamily: 'monospace', color: label === 'CV' && series.cv > 5 ? T.warn : T.txt2 } }, value)))))))))));
         })),
@@ -10674,7 +10747,7 @@ function InternalRealDataWorkScreen({ qcRows, selectedPart, previewMode, loadSam
                         lineSegments.map((segment, i) => segment.length > 1 ? React.createElement("polyline", { key: `line_${i}`, points: segment.join(' '), fill: 'none', stroke: T.acc, strokeWidth: '2' }) : null),
                         relatedByDate.map((r, i) => { const v = typeof r.value === 'number' ? r.value : parseFloat(r.value); return React.createElement("circle", { key: r.id || i, cx: toXDate(r.date), cy: toY(v), r: '4', fill: r.status === 'ok' ? T.acc : T.warn, stroke: T.white, strokeWidth: '1.5' }); }),
                         axisDates.map((date, i) => i % labelEvery === 0 || i === axisDates.length - 1 ? React.createElement("text", { key: date, x: toXDate(date), y: H - 5, textAnchor: 'middle', fontSize: '9', fill: T.dim }, date.slice(5).replace('-', '.')) : null)),
-                    React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '6px', margin: '8px 0 10px', fontSize: '10px', color: T.dim } }, [['N', related.length], ['Mean', mean.toFixed(2)], ['SD', sd.toFixed(2)], ['CV', `${cv ? cv.toFixed(1) : '0.0'}%`]].map(([label, value]) => React.createElement("div", { key: label, style: { border: `1px solid ${T.bdr}`, padding: '6px', borderRadius: '4px' } },
+                    React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '6px', margin: '8px 0 10px', fontSize: '10px', color: T.dim } }, [['N', related.length], ['Mean', qcFormatMeasuredStat(mean, related, 2)], ['SD', qcFormatMeasuredStat(sd, related, 2)], ['CV', `${qcFormatMeasuredStat(cv || 0, related, 2)}%`]].map(([label, value]) => React.createElement("div", { key: label, style: { border: `1px solid ${T.bdr}`, padding: '6px', borderRadius: '4px' } },
                         React.createElement("div", null, label),
                         React.createElement("b", { style: { display: 'block', color: T.txt2, fontFamily: 'monospace', marginTop: '2px' } }, value)))),
                     React.createElement("div", { style: { borderTop: `1px solid ${T.bdr}`, paddingTop: '8px', fontSize: '11px', lineHeight: 1.8 } },
@@ -10776,7 +10849,7 @@ function RealDataLJ({ qcRows, selectedPart, previewMode, loadSample, clearData, 
                         relatedByDate.map((r, i) => { const v = typeof r.value === 'number' ? r.value : parseFloat(r.value); return React.createElement("circle", { key: r.id || i, cx: toXDate(r.date), cy: toY(v), r: '3.2', fill: r.status === 'ok' ? T.acc : T.warn, stroke: T.white, strokeWidth: '1.2' }); }),
                         axisDates.map((date, i) => i % labelEvery === 0 || i === axisDates.length - 1 ? React.createElement("text", { key: date, x: toXDate(date), y: H - 4, textAnchor: 'middle', fontSize: '7', fill: T.dim }, date.slice(5).replace('-', '.')) : null))),
                 React.createElement("div", { style: { fontSize: '12px', lineHeight: 1.9 } },
-                    React.createElement(DetailLine, { label: '\uD3C9\uADE0 / SD / CV', value: `${mean.toFixed(3)} / ${sd.toFixed(3)} / ${cv ? cv.toFixed(1) : '0.0'}%` }),
+                    React.createElement(DetailLine, { label: '\uD3C9\uADE0 / SD / CV', value: `${qcFormatMeasuredStat(mean, related, 2)} / ${qcFormatMeasuredStat(sd, related, 2)} / ${qcFormatMeasuredStat(cv || 0, related, 2)}%` }),
                     React.createElement(DetailLine, { label: '\uCD5C\uADFC \uC870\uCE58\uC0AC\uD56D', value: '\uAE30\uB85D \uC5C6\uC74C' }),
                     React.createElement(DetailLine, { label: '\uAD00\uB828 Cal \uC774\uB825', value: '\uC900\uBE44 \uC911' }),
                     React.createElement(DetailLine, { label: '\uAD00\uB828 \uC7A5\uBE44\uC810\uAC80 \uC774\uBCA4\uD2B8', value: maintenanceEvents.length ? `${maintenanceEvents.length}건` : '기록 없음' })))));
@@ -11098,9 +11171,9 @@ function LJChart({ qcRows }) {
                 "n=",
                 pts.length,
                 " \u00B7 Mean=",
-                mean.toFixed(3),
+                qcFormatMeasuredStat(mean, pts, 2),
                 " \u00B7 SD=",
-                sd.toFixed(3),
+                qcFormatMeasuredStat(sd, pts, 2),
                 pts.length > 0 && ` · 2SD 이탈: ${vals.filter(v => Math.abs(v - mean) > 2 * sd).length}건`),
             pts.length < 2 ? React.createElement("div", { style: { textAlign: 'center', padding: '32px', color: T.muted, fontSize: '12px' } }, "\uB370\uC774\uD130 2\uAC74 \uC774\uC0C1 \uD544\uC694") : React.createElement(React.Fragment, null,
                 React.createElement("svg", { width: '100%', viewBox: `0 0 ${W} ${H}`, style: { overflow: 'visible' } },
@@ -11119,10 +11192,10 @@ function Stats({ qcRows, selectedPart, equipmentList = [], controlMaterials = []
     groups[k] = { testCode: r.testCode, testName: getDisplayTestName(r) || r.testName, controlCode: r.controlCode, qcLot: r.qcLot || '', device: r.device || '', unit: r.unit || '', method: r.method || '', dates: [], vals: [], raw: [] }; const v = typeof r.value === 'number' ? r.value : parseFloat(r.value); groups[k].raw.push(r); if (r.date)
     groups[k].dates.push(r.date); if (!Number.isNaN(v))
     groups[k].vals.push(v); }); return Object.values(groups).map(g => { const n = g.vals.length; if (!n)
-    return null; const mean = g.vals.reduce((a, b) => a + b, 0) / n; const sd = n > 1 ? Math.sqrt(g.vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : 0; return { ...g, n, mean, sd, cv: mean > 0 ? (sd / mean * 100) : 0, min: Math.min(...g.vals), max: Math.max(...g.vals), dateFrom: g.dates.sort()[0] || '', dateTo: g.dates.sort().slice(-1)[0] || '', excluded: g.raw.length - g.vals.length }; }).filter(Boolean); }, [qcRows]); const importTarget = r => { const material = controlMaterials.find(m => [m.levelLots?.level1, m.levelLots?.level2].includes(r.qcLot)); if (!material) {
+    return null; const mean = g.vals.reduce((a, b) => a + b, 0) / n; const sd = n > 1 ? Math.sqrt(g.vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : 0; return { ...g, n, mean, sd, cv: mean > 0 ? (sd / mean * 100) : 0, min: Math.min(...g.vals), max: Math.max(...g.vals), precision: qcMeasurementPrecision(g.raw, 2), dateFrom: g.dates.sort()[0] || '', dateTo: g.dates.sort().slice(-1)[0] || '', excluded: g.raw.length - g.vals.length }; }).filter(Boolean); }, [qcRows]); const importTarget = r => { const material = controlMaterials.find(m => [m.levelLots?.level1, m.levelLots?.level2].includes(r.qcLot)); if (!material) {
     alert('해당 QC LOT와 연결된 Control을 먼저 등록하세요.');
     return;
-} const device = equipmentList.find(d => d.name === r.device) || equipmentList.find(d => d.enabled && samePart(d.part, selectedPart)) || {}; setPendingLabTargetDraft?.({ part: selectedPart, equipmentId: device.id || '', equipmentName: device.name || r.device, controlMaterialId: material.id, controlMaterialName: material.name, level1Lot: material.levelLots?.level1 || '', level2Lot: material.levelLots?.level2 || '', qcLot: r.qcLot, analyteCode: r.testCode, analyteName: r.testName, dateFrom: r.dateFrom, dateTo: r.dateTo, n: r.n, mean: r.mean, sd: r.sd, cv: r.cv, min: r.min, max: r.max, unit: r.unit, method: r.method || '', source: 'stats', status: 'draft' }); setPage?.('control.target'); }; return React.createElement("div", null,
+} const device = equipmentList.find(d => d.name === r.device) || equipmentList.find(d => d.enabled && samePart(d.part, selectedPart)) || {}; setPendingLabTargetDraft?.({ part: selectedPart, equipmentId: device.id || '', equipmentName: device.name || r.device, controlMaterialId: material.id, controlMaterialName: material.name, level1Lot: material.levelLots?.level1 || '', level2Lot: material.levelLots?.level2 || '', qcLot: r.qcLot, analyteCode: r.testCode, analyteName: r.testName, dateFrom: r.dateFrom, dateTo: r.dateTo, n: r.n, mean: r.mean, sd: r.sd, cv: r.cv, min: r.min, max: r.max, unit: r.unit, method: r.method || '', source: 'stats', status: 'draft', precision: r.precision }); setPage?.('control.target'); }; return React.createElement("div", null,
     React.createElement("div", { style: { fontSize: '20px', fontWeight: 700, marginBottom: '14px', letterSpacing: '-0.5px' } }, "\uD3C9\uADE0 / SD / CV"),
     React.createElement(DataTable, { headers: ['검사명', '컨트롤', 'QC LOT', 'N', 'Mean', 'SD', 'CV%', 'Min', 'Max', '기간', 'Lab Target'] }, rows.map((r, i) => React.createElement("tr", { key: i, style: { borderBottom: `1px solid ${T.bdr}`, background: i % 2 === 0 ? T.white : T.sur2 } },
         React.createElement("td", { style: td() }, r.testName),
@@ -11130,13 +11203,13 @@ function Stats({ qcRows, selectedPart, equipmentList = [], controlMaterials = []
             React.createElement(Bdg, { color: T.acc, bg: T.accLt, text: r.controlCode })),
         React.createElement("td", { style: td('mono muted') }, r.qcLot || '-'),
         React.createElement("td", { style: td('mono muted') }, r.n),
-        React.createElement("td", { style: td('mono bold') }, r.mean.toFixed(3)),
-        React.createElement("td", { style: td('mono muted') }, r.sd.toFixed(3)),
+        React.createElement("td", { style: td('mono bold') }, qcFormatRounded(r.mean, r.precision)),
+        React.createElement("td", { style: td('mono muted') }, qcFormatRounded(r.sd, r.precision)),
         React.createElement("td", { style: td('mono bold', r.cv > 5 ? T.warn : T.ok) },
-            r.cv.toFixed(1),
+            qcFormatRounded(r.cv, r.precision),
             "%"),
-        React.createElement("td", { style: td('mono muted') }, r.min.toFixed(3)),
-        React.createElement("td", { style: td('mono muted') }, r.max.toFixed(3)),
+        React.createElement("td", { style: td('mono muted') }, qcFormatRounded(r.min, r.precision)),
+        React.createElement("td", { style: td('mono muted') }, qcFormatRounded(r.max, r.precision)),
         React.createElement("td", { style: td('mono muted') },
             r.dateFrom || '-',
             " ~ ",
@@ -18534,7 +18607,7 @@ function LabTargetsPage({ title = 'Target 설정', selectedPart, qcRows = [], eq
         const key = groupKey(pendingDeviceId, material.id, applyDate(material));
         const group = groups.find(g => g.key === key) || { key, part: pendingLabTargetDraft.part, deviceId: pendingDeviceId, deviceName: pendingDeviceName, materialId: material.id, material, applyDate: applyDate(material), analytes: [] };
         const level = pendingLabTargetDraft.level1Lot && pendingLabTargetDraft.level1Lot === pendingLabTargetDraft.qcLot ? 'Level 1' : pendingLabTargetDraft.level2Lot && pendingLabTargetDraft.level2Lot === pendingLabTargetDraft.qcLot ? 'Level 2' : pendingLabTargetDraft.level3Lot && pendingLabTargetDraft.level3Lot === pendingLabTargetDraft.qcLot ? 'Level 3' : 'Level 1';
-        const draftRow = { id: `tmp_stats_${Date.now()}`, part: pendingLabTargetDraft.part, deviceId: pendingDeviceId, deviceName: pendingDeviceName, equipmentName: pendingDeviceName, controlMaterialId: material.id, controlMaterialName: material.name, testCode: pendingLabTargetDraft.analyteCode, testName: pendingLabTargetDraft.analyteName, level, lot: pendingLabTargetDraft.qcLot || materialLotForLevel(material, level), mean: String(pendingLabTargetDraft.mean?.toFixed ? pendingLabTargetDraft.mean.toFixed(3) : pendingLabTargetDraft.mean || ''), sd: String(pendingLabTargetDraft.sd?.toFixed ? pendingLabTargetDraft.sd.toFixed(3) : pendingLabTargetDraft.sd || ''), min: String(pendingLabTargetDraft.min?.toFixed ? pendingLabTargetDraft.min.toFixed(3) : pendingLabTargetDraft.min || ''), max: String(pendingLabTargetDraft.max?.toFixed ? pendingLabTargetDraft.max.toFixed(3) : pendingLabTargetDraft.max || ''), unit: pendingLabTargetDraft.unit || '', method: pendingLabTargetDraft.method || '', applyStartDate: pendingLabTargetDraft.dateTo || '', comment: '통계에서 가져온 제안값', enabled: true, source: '검사실 적용값', dataSource: '검사실 적용값', sourceType: TARGET_SOURCE_LAB_APPLIED, targetSource: TARGET_SOURCE_LAB_APPLIED, status: 'draft' };
+        const draftRow = { id: `tmp_stats_${Date.now()}`, part: pendingLabTargetDraft.part, deviceId: pendingDeviceId, deviceName: pendingDeviceName, equipmentName: pendingDeviceName, controlMaterialId: material.id, controlMaterialName: material.name, testCode: pendingLabTargetDraft.analyteCode, testName: pendingLabTargetDraft.analyteName, level, lot: pendingLabTargetDraft.qcLot || materialLotForLevel(material, level), mean: String(qcFormatRounded(pendingLabTargetDraft.mean, pendingLabTargetDraft.precision ?? 2)), sd: String(qcFormatRounded(pendingLabTargetDraft.sd, pendingLabTargetDraft.precision ?? 2)), min: String(qcFormatRounded(pendingLabTargetDraft.min, pendingLabTargetDraft.precision ?? 2)), max: String(qcFormatRounded(pendingLabTargetDraft.max, pendingLabTargetDraft.precision ?? 2)), unit: pendingLabTargetDraft.unit || '', method: pendingLabTargetDraft.method || '', applyStartDate: pendingLabTargetDraft.dateTo || '', comment: '통계에서 가져온 제안값', enabled: true, source: '검사실 적용값', dataSource: '검사실 적용값', sourceType: TARGET_SOURCE_LAB_APPLIED, targetSource: TARGET_SOURCE_LAB_APPLIED, status: 'draft' };
         setDetailGroup(null);
         setEditingKey(group.key);
         setTargetFormMode('create');

@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QC Manager v0.6 Codex Starter</title>
+<!-- InyQC material + Calibrator EasyQC structure patch v9 / 2026-08-24 -->
 <!-- InyQC build: 2026.08.24 v6 graph-restore + lazy-performance + full-table-grid -->
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
   <link rel="dns-prefetch" href="//unpkg.com">
@@ -380,11 +381,18 @@ const MENU_TREE = [
         ] },
     { id: 'external', label: '외부정도관리', sub: [{ id: 'external.entry', label: '외부정도관리 결과 등록' }, { id: 'external.round', label: '기관별 / 회차별 결과' }, { id: 'external.items', label: '참여항목 관리' }, { id: 'external.criteria', label: '판정기준' }, { id: 'external.action', label: '미흡 항목 조치사항' }, { id: 'external.yearly', label: '연간 외부정도관리 현황' }, { id: 'external.report', label: '외부정도관리 보고서' }] },
     { id: 'reagent', label: '시약', sub: [{ id: 'reagent.lot', label: '시약 LOT 관리' }, { id: 'reagent.parallel', label: '시약 Parallel Test' }, { id: 'reagent.calParallel', label: 'Cal Parallel Test' }, { id: 'reagent.recovery', label: 'Global Recovery' }] },
-    { id: 'control', label: '정도관리물질', sub: [{ id: 'control.lot', label: 'QC LOT 관리' }, { id: 'control.material', label: 'Control 등록' }, { id: 'control.panel', label: 'QC LOT 패널' }] },
+    { id: 'control', label: '정도관리물질', sub: [
+            { id: 'control.lot', label: 'Control 물질 입고 및 현황 등록' },
+            { id: 'control.calibrator', label: 'Calibrator 물질 입고 및 현황 등록' },
+            { id: 'control.parallel', label: 'Calibrator 환자 검체 비교검사(Parallel Test)' },
+            { id: 'control.verification', label: 'Calibrator Verification' },
+            { id: 'control.usage', label: '정도관리물질 사용 현황' },
+            { id: 'control.storage', label: '정도관리물질 보관 및 조제방법 등록' }
+        ] },
     { id: 'equipment', label: '장비 및 기타', sub: [{ id: 'equipment.device', label: '장비 설정' }, { id: 'equipment.currentStandby', label: 'Current / Standby 비교' }, { id: 'equipment.cal', label: 'Calibration 관련 이력' }, { id: 'equipment.calParallel', label: 'Calibration 전후 비교' }, { id: 'equipment.maintenance', label: '장비점검 이벤트' }] },
     { id: 'settings', label: '기본등록 및 설정', sub: [{ id: 'settings.hospital', label: '병원 / 부서 설정' }, { id: 'settings.devices', label: '장비 등록' }, { id: 'settings.equipmentItems', label: '장비별 검사 아이템 설정' }, { id: 'settings.testMethods', label: '측정방법 등록' }, { id: 'settings.mapping', label: '검사코드 매핑' }, { id: 'settings.operators', label: '파트별 담당자 관리' }, { id: 'settings.approval', label: '결재란 설정' }, { id: 'settings.actions', label: '조치사항 등록' }, { id: 'settings.permission', label: '사용자 / 권한' }, { id: 'settings.audit', label: 'Audit Trail' }, { id: 'settings.signature', label: '전자서명' }] }
 ];
-const RENDERED = new Set(['internal.daily', 'internal.dat.auto', 'internal.graph', 'internal.trend', 'internal.multi', 'internal.item', 'internal.monthly.report', 'internal.cal.history', 'internal.unmapped', 'internal.alert', 'internal.stats', 'internal.westgard', 'internal.labtarget.register', 'internal.labtarget.settings', 'internal.labtarget.retroactive', 'reagent.lot', 'reagent.parallel', 'reagent.calParallel', 'control.lot', 'control.material', 'control.target', 'control.parallel', 'equipment.device', 'equipment.currentStandby', 'equipment.calParallel', 'settings.devices', 'settings.equipmentItems', 'settings.testMethods', 'settings.mapping', 'settings.operators', 'settings.approval', 'settings.actions']);
+const RENDERED = new Set(['internal.daily', 'internal.dat.auto', 'internal.graph', 'internal.trend', 'internal.multi', 'internal.item', 'internal.monthly.report', 'internal.cal.history', 'internal.unmapped', 'internal.alert', 'internal.stats', 'internal.westgard', 'internal.labtarget.register', 'internal.labtarget.settings', 'internal.labtarget.retroactive', 'reagent.lot', 'reagent.parallel', 'reagent.calParallel', 'control.lot', 'control.calibrator', 'control.material', 'control.target', 'control.parallel', 'equipment.device', 'equipment.currentStandby', 'equipment.calParallel', 'settings.devices', 'settings.equipmentItems', 'settings.testMethods', 'settings.mapping', 'settings.operators', 'settings.approval', 'settings.actions']);
 const ACTION_CATEGORIES = ['QC 재검', 'Control', '시약', 'Calibration', '장비점검', 'Target/허용범위', '기타'];
 const ACTION_SCOPES = ['공통', '내부정도관리', '외부정도관리'];
 const ACTION_PARTS = ['전체', '임상화학', '면역', '혈액', '뇨', '혈액은행', 'POCT', '미생물', '기타'];
@@ -895,6 +903,54 @@ const PCCC_C503_LAB_TARGET_DATA = [
     ['BUN', 'mg/dL', 'Urease with GLDH', { mean: '18.4', sd: '0.9', min: '16.6', max: '20.2' }, { mean: '57.1', sd: '2.9', min: '51.3', max: '62.9' }],
     ['UIBC', 'ug/dL', '제조사법', { mean: '225', sd: '16', min: '194', max: '256' }, { mean: '280', sd: '20', min: '240', max: '320' }]
 ];
+// 제조사 QC 제공값 원본. Control 입고 상세 화면의 기준 데이터이며,
+// Lab Target 적용값과 분리해서 보존한다. 이후 Lab Target 등록 화면도 이 원본을 읽도록 연결할 수 있다.
+const CONTROL_MANUFACTURER_QC_REFERENCE = (() => {
+    const fixed = (materialId, sourceFile, rows) => ({ materialId, sourceType: 'manufacturer', sourceLabel: '제조사 제공값', sourceFile, rows });
+    const pcccUnitOverride = { 'Chloride': 'mEq/L', 'Potassium': 'mEq/L', 'Sodium': 'mEq/L' };
+    const pcccRows = [
+        { testName: 'Lactic acid', level: 'Level 1', lot: '805367', mean: '15.300', sd: '0.901', min: '13.498', max: '17.102', unit: 'mg/dL' },
+        { testName: 'Lactic acid', level: 'Level 2', lot: '758775', mean: '33.300', sd: '1.980', min: '29.340', max: '37.260', unit: 'mg/dL' },
+        ...PCCC_C503_LAB_TARGET_DATA.flatMap(([testName, unit, method, level1, level2]) => [
+            { testName, level: 'Level 1', lot: '805367', mean: level1.mean, sd: level1.sd, min: level1.min, max: level1.max, unit: pcccUnitOverride[testName] || unit, method },
+            { testName, level: 'Level 2', lot: '758775', mean: level2.mean, sd: level2.sd, min: level2.min, max: level2.max, unit: pcccUnitOverride[testName] || unit, method }
+        ])
+    ];
+    const b221Rows = Object.entries(B221_TARGET_VALUES).flatMap(([testName, item]) => Object.entries(item.levels).map(([level, values]) => {
+        const levelNo = (String(level).match(/(\d+)/) || [])[1] || '1';
+        return { testName, level, lot: B221_LEVEL_LOTS[`level${levelNo}`] || '', mean: values.mean, sd: values.sd, min: values.min, max: values.max, unit: item.unit, method: B221_TEST_METHODS[testName] || '제조사법' };
+    }));
+    return {
+        cm_default_cys: fixed('cm_default_cys', 'EasyQC CYS 제조사 제공값', [
+            { testName: 'Cystatin C', level: 'Level 1', lot: '938844', mean: '1.060', sd: '0.050', min: '0.960', max: '1.160', unit: 'mg/L' },
+            { testName: 'Cystatin C', level: 'Level 2', lot: '938846', mean: '1.580', sd: '0.050', min: '1.480', max: '1.680', unit: 'mg/L' },
+            { testName: 'Cystatin C', level: 'Level 3', lot: '938845', mean: '4.250', sd: '0.210', min: '3.830', max: '4.670', unit: 'mg/L' }
+        ]),
+        cm_default_hcy: fixed('cm_default_hcy', 'EASY QCHCY.pdf', [
+            { testName: 'Homocysteine', level: 'Level 1', lot: '120595', mean: '12.200', sd: '0.700', min: '10.800', max: '13.600', unit: 'umol/L' },
+            { testName: 'Homocysteine', level: 'Level 2', lot: '220595', mean: '37.600', sd: '1.900', min: '33.800', max: '41.400', unit: 'umol/L' }
+        ]),
+        cm_default_hba1c_control: fixed('cm_default_hba1c_control', 'EASY QCA1c.pdf', [
+            { testName: 'HbA1c', level: 'Level 1', lot: '837030', mean: '5.890', sd: '0.350', min: '5.190', max: '6.590', unit: '%' },
+            { testName: 'HbA1c', level: 'Level 2', lot: '837031', mean: '9.130', sd: '0.550', min: '8.030', max: '10.230', unit: '%' }
+        ]),
+        cm_default_rf: fixed('cm_default_rf', 'EASY QCRF.pdf', [
+            { testName: 'RF', level: 'Level 1', lot: '931462', mean: '20.400', sd: '1.400', min: '18.000', max: '23.000', unit: 'IU/mL' },
+            { testName: 'RF', level: 'Level 2', lot: '931463', mean: '49.600', sd: '2.500', min: '45.000', max: '55.000', unit: 'IU/mL' }
+        ]),
+        cm_default_hisens_auto_rpr: fixed('cm_default_hisens_auto_rpr', 'EASY QCRPR.pdf', [
+            { testName: 'RPR', level: 'Level 1', lot: '0613', mean: '0.150', sd: '0.075', min: '0.000', max: '0.300', unit: 'RU' },
+            { testName: 'RPR', level: 'Level 2', lot: '0613', mean: '6.000', sd: '0.600', min: '4.800', max: '7.200', unit: 'RU' }
+        ]),
+        cm_default_co2_qc: fixed('cm_default_co2_qc', 'EASY QCco2.pdf', [
+            { testName: 'TCO2', level: 'Level 1', lot: '906235', mean: '17.300', sd: '1.000', min: '15.300', max: '19.300', unit: 'mmol/L' },
+            { testName: 'TCO2', level: 'Level 2', lot: '906234', mean: '31.100', sd: '1.900', min: '27.300', max: '34.900', unit: 'mmol/L' }
+        ]),
+        cm_default_pccc: fixed('cm_default_pccc', 'EASY QCPCCC최신.pdf', pcccRows),
+        [B221_CONTROL_MATERIAL_ID]: fixed(B221_CONTROL_MATERIAL_ID, 'Cobas b 221 제조사 제공값', b221Rows)
+    };
+})();
+
 const OTHER_INITIAL_LAB_TARGETS = DEFAULT_LAB_TARGET_DATA.flatMap(item => [
     { id: `lt_${item.prefix}_c503_l1`, part: '임상화학', deviceId: COBAS_C503_DEVICE_ID, controlMaterialId: item.controlMaterialId, testCode: item.testName, testName: item.testName, level: 'Level 1', mean: item.level1.mean, sd: item.level1.sd, min: item.level1.min, max: item.level1.max, unit: item.unit, method: item.method, enabled: true },
     { id: `lt_${item.prefix}_c503_l2`, part: '임상화학', deviceId: COBAS_C503_DEVICE_ID, controlMaterialId: item.controlMaterialId, testCode: item.testName, testName: item.testName, level: 'Level 2', mean: item.level2.mean, sd: item.level2.sd, min: item.level2.min, max: item.level2.max, unit: item.unit, method: item.method, enabled: true }
@@ -3970,7 +4026,7 @@ function controlMaterialDisplayRows(materials = [], selectedPart = '') {
             const key = `${item.id}|${level1}|${level2}|${level3}|${h.startDate || ''}|${h.endDate || ''}`;
             if (rows.some(row => row._lotKey === key))
                 return;
-            rows.push({ ...item, id: `${item.id}__${level1}_${level2}_${level3}_${h.startDate || ''}_${h.endDate || ''}`, baseId: item.id, _lotKey: key, _isHistory: !isCurrent, levelLots: { level1, level2, level3 }, registeredAt: h.registeredAt || item.registeredAt || '', expDate: h.expDate || item.expDate || '', startDate: h.startDate || item.startDate || '', endDate: h.endDate || item.endDate || '', status: isCurrent ? (item.enabled === false ? '미사용' : '사용') : '미사용', enabled: isCurrent ? item.enabled !== false : false, targetStatus: h.targetStatus || item.targetStatus || 'none', equipment: normalizeRegisteredDeviceName(h.equipment || item.equipment || 'Cobas c 503'), lotTests: h.tests || [] });
+            rows.push({ ...item, id: `${item.id}__${level1}_${level2}_${level3}_${h.startDate || ''}_${h.endDate || ''}`, baseId: item.id, _lotKey: key, _isHistory: !isCurrent, levelLots: { level1, level2, level3 }, registeredAt: h.registeredAt || item.registeredAt || '', expDate: h.expDate || item.expDate || '', startDate: h.startDate || item.startDate || '', endDate: h.endDate || item.endDate || '', status: isCurrent ? (item.enabled === false ? '미사용' : '사용') : '미사용', enabled: isCurrent ? item.enabled !== false : false, targetStatus: h.targetStatus || item.targetStatus || 'none', equipment: normalizeRegisteredDeviceName(h.equipment || item.equipment || 'Cobas c 503'), lotTests: h.tests || (isCurrent ? (item.lotTests || []) : []) });
         };
         (item.lotHistory || []).forEach(h => add(h, false));
         add({ levelLots: item.levelLots, registeredAt: item.registeredAt, expDate: item.expDate, startDate: item.startDate, endDate: item.endDate, targetStatus: item.targetStatus, equipment: item.equipment }, true);
@@ -4621,6 +4677,9 @@ function App() {
     const [equipmentTestItemSettings, setEquipmentTestItemSettings] = useState(() => upsertB221EquipmentItems(readJsonStorage('qcManagerEquipmentTestItems', INITIAL_EQUIPMENT_TEST_ITEM_SETTINGS)));
     const [partOperators, setPartOperators] = useState(() => readJsonStorage('qcManagerPartOperators', INITIAL_PART_OPERATORS));
     const [controlMaterials, setControlMaterials] = useState(() => upsertB221ControlMaterials(readJsonStorage('qcManagerControlMaterials', INITIAL_CONTROL_MATERIALS)));
+    const [calibratorMaterials, setCalibratorMaterials] = useState(() => readJsonStorage('qcManagerCalibratorMaterials', INITIAL_CALIBRATOR_MATERIALS));
+    const [calibratorParallelRecords, setCalibratorParallelRecords] = useState(() => mergeCalibratorParallelSeed(readJsonStorage('qcManagerCalibratorParallelRecords', [])));
+    const [pendingCalibratorParallel, setPendingCalibratorParallel] = useState(null);
     const [labTargets, setLabTargets] = useState(() => upsertB221LabTargets(readJsonStorage('qcManagerLabTargets', INITIAL_LAB_TARGETS)));
     const [targetProfiles, setTargetProfiles] = useState(() => upsertB221TargetProfiles(readJsonStorage('qcManagerTargetProfiles', [])));
     const [westgardSettings, setWestgardSettings] = useState(() => readJsonStorage('qcManagerWestgardSettings', {}));
@@ -4755,6 +4814,8 @@ function App() {
         return profiles;
     }); }, []);
     useEffect(() => { writeJsonStorage('qcManagerControlMaterials', controlMaterials); }, [controlMaterials]);
+    useEffect(() => { writeJsonStorage('qcManagerCalibratorMaterials', calibratorMaterials); }, [calibratorMaterials]);
+    useEffect(() => { writeJsonStorage('qcManagerCalibratorParallelRecords', calibratorParallelRecords); }, [calibratorParallelRecords]);
     useEffect(() => { writeJsonStorage('qcManagerLabTargets', labTargets); }, [labTargets]);
     useEffect(() => { writeJsonStorage('qcManagerTargetProfiles', targetProfiles); }, [targetProfiles]);
     useEffect(() => { writeJsonStorage('qcManagerWestgardSettings', westgardSettings); }, [westgardSettings]);
@@ -4914,6 +4975,8 @@ function App() {
             createdAt: new Date().toISOString(),
             data: {
                 controlMaterials,
+                calibratorMaterials,
+                calibratorParallelRecords,
                 labTargets,
                 targetProfiles,
                 westgardSettings,
@@ -4993,6 +5056,10 @@ function App() {
                 const data = parsed.data || parsed;
                 if (Array.isArray(data.controlMaterials))
                     setControlMaterials(upsertB221ControlMaterials(data.controlMaterials));
+                if (Array.isArray(data.calibratorMaterials))
+                    setCalibratorMaterials(data.calibratorMaterials);
+                if (Array.isArray(data.calibratorParallelRecords))
+                    setCalibratorParallelRecords(mergeCalibratorParallelSeed(data.calibratorParallelRecords));
                 if (Array.isArray(data.labTargets))
                     setLabTargets(upsertB221LabTargets(data.labTargets));
                 if (Array.isArray(data.targetProfiles))
@@ -5976,9 +6043,13 @@ function App() {
                     " ",
                     page === 'reagent.lot' && React.createElement(LotDashboard, { qcRows: visibleAnalysisQcRows, importedReagentLots: importedReagentLots, setImportedReagentLots: setImportedReagentLots, selectedPart: selectedPart }),
                     " ",
-                    page === 'control.lot' && React.createElement(QcLotManagementPage, { selectedPart: selectedPart, controlMaterials: controlMaterials }),
+                    page === 'control.lot' && React.createElement(QcLotManagementPage, { selectedPart: selectedPart, controlMaterials: controlMaterials, setControlMaterials: setControlMaterials, setPage: setPage, setPendingTargetMaterial: setPendingTargetMaterial }),
                     " ",
-                    (page === 'reagent.parallel' || page === 'reagent.calParallel' || page === 'control.parallel' || page === 'equipment.currentStandby' || page === 'equipment.calParallel') && React.createElement(Parallel, { page: page, parallelRows: parallelRows, setParallelRows: setParallelRows, reagentParallelCandidates: reagentParallelCandidates, setReagentParallelCandidates: setReagentParallelCandidates, latestImportedParallelRecords: latestImportedParallelRecords, setLatestImportedParallelRecords: setLatestImportedParallelRecords, parallelImportMeta: latestParallelImportMeta, importedReagentLots: importedReagentLots, selectedPart: selectedPart, equipmentList: equipmentList, equipmentTestItemSettings: equipmentTestItemSettings, testCodeMap: testCodeMap, qcTestCodeMappings: qcTestCodeMappings, controlMaterials: controlMaterials, labTargets: labTargets, qcRows: visibleQcRows, importedQcResults: visibleImportedQcResults, analysisQcRows: visibleAnalysisQcRows, partOperators: partOperators, approvalSettings: approvalSettings }),
+                    page === 'control.calibrator' && React.createElement(CalibratorMaterialsPage, { selectedPart: selectedPart, calibratorMaterials: calibratorMaterials, setCalibratorMaterials: setCalibratorMaterials, setPage: setPage, setPendingCalibratorParallel: setPendingCalibratorParallel }),
+                    " ",
+                    page === 'control.parallel' && React.createElement(CalibratorParallelPage, { selectedPart: selectedPart, calibratorParallelRecords: calibratorParallelRecords, setCalibratorParallelRecords: setCalibratorParallelRecords, equipmentList: equipmentList, approvalSettings: approvalSettings, pendingCalibratorParallel: pendingCalibratorParallel, setPendingCalibratorParallel: setPendingCalibratorParallel }),
+                    " ",
+                    (page === 'reagent.parallel' || page === 'reagent.calParallel' || page === 'equipment.currentStandby' || page === 'equipment.calParallel') && React.createElement(Parallel, { page: page, parallelRows: parallelRows, setParallelRows: setParallelRows, reagentParallelCandidates: reagentParallelCandidates, setReagentParallelCandidates: setReagentParallelCandidates, latestImportedParallelRecords: latestImportedParallelRecords, setLatestImportedParallelRecords: setLatestImportedParallelRecords, parallelImportMeta: latestParallelImportMeta, importedReagentLots: importedReagentLots, selectedPart: selectedPart, equipmentList: equipmentList, equipmentTestItemSettings: equipmentTestItemSettings, testCodeMap: testCodeMap, qcTestCodeMappings: qcTestCodeMappings, controlMaterials: controlMaterials, labTargets: labTargets, qcRows: visibleQcRows, importedQcResults: visibleImportedQcResults, analysisQcRows: visibleAnalysisQcRows, partOperators: partOperators, approvalSettings: approvalSettings }),
                     " ",
                     (page === 'equipment.device' || page === 'settings.devices') && React.createElement(EquipmentSettingsPage, { equipmentList: equipmentList, setEquipmentList: setEquipmentList, equipmentTestItems: equipmentTestItems, setEquipmentTestItems: setEquipmentTestItems }),
                     " ",
@@ -5990,7 +6061,7 @@ function App() {
                     " ",
                     page === 'settings.approval' && React.createElement(ApprovalSettingsPage, { selectedPart: selectedPart, approvalSettings: approvalSettings, setApprovalSettings: setApprovalSettings }),
                     " ",
-                    page === 'control.material' && React.createElement(ControlMaterialsPage, { title: 'Control \uB4F1\uB85D', selectedPart: selectedPart, controlMaterials: controlMaterials, setControlMaterials: setControlMaterials, equipmentList: equipmentList, labTargets: labTargets, setLabTargets: setLabTargets, targetProfiles: targetProfiles, setTargetProfiles: setTargetProfiles, setPage: setPage, setPendingTargetMaterial: setPendingTargetMaterial }),
+                    page === 'control.material' && React.createElement(ControlMaterialsPage, { title: 'Control 물질 데이터입력', selectedPart: selectedPart, controlMaterials: controlMaterials, setControlMaterials: setControlMaterials, equipmentList: equipmentList, labTargets: labTargets, setLabTargets: setLabTargets, targetProfiles: targetProfiles, setTargetProfiles: setTargetProfiles, setPage: setPage, setPendingTargetMaterial: setPendingTargetMaterial }),
                     " ",
                     (page === 'control.target' || page === 'internal.labtarget.register' || page === 'internal.labtarget.settings') && React.createElement(LabTargetsPage, { key: page, title: page === 'internal.labtarget.settings' ? 'Lab Target 설정' : 'Lab Target 등록', screenMode: page === 'internal.labtarget.settings' ? 'settings' : 'register', selectedPart: selectedPart, qcRows: visibleAnalysisQcRows, equipmentList: equipmentList, controlMaterials: controlMaterials, setControlMaterials: setControlMaterials, testMethods: equipmentTestItems, labTargets: labTargets, setLabTargets: setLabTargets, targetProfiles: targetProfiles, setTargetProfiles: setTargetProfiles, westgardSettings: westgardSettings, setWestgardSettings: setWestgardSettings, pendingLabTargetDraft: pendingLabTargetDraft, setPendingLabTargetDraft: setPendingLabTargetDraft, pendingTargetMaterial: pendingTargetMaterial, setPendingTargetMaterial: setPendingTargetMaterial, setPage: setPage }),
                     " ",
@@ -20668,44 +20739,376 @@ function Parallel({ page = '', parallelRows = [], setParallelRows = null, reagen
                 React.createElement(Dot, { color: r?.status === 'ok' ? T.ok : T.danger }))); })),
         d.length === 0 && React.createElement(Empty, null));
 }
-function QcLotManagementPage({ selectedPart, controlMaterials = [] }) {
-    const rows = controlMaterials.filter(x => samePart(x.part, selectedPart)).sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0) || (a.name || '').localeCompare(b.name || ''));
-    const statusText = item => TARGET_STATUS_LABELS[item.targetStatus || 'none'] || TARGET_STATUS_LABELS.none;
-    const statusBadge = item => {
-        const status = item.targetStatus || 'none';
-        const color = status === 'confirmed' ? T.ok : status === 'reference' ? T.warn : status === 'calculating' ? T.acc : T.muted;
-        const bg = status === 'confirmed' ? T.okLt : status === 'reference' ? T.warnLt : status === 'calculating' ? T.accLt : T.sur2;
-        const border = status === 'confirmed' ? 'rgba(22,163,74,.28)' : status === 'reference' ? 'rgba(245,158,11,.28)' : status === 'calculating' ? 'rgba(29,78,216,.24)' : T.bdr;
-        return React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', height: '24px', background: bg, color, border: `1px solid ${border}`, borderRadius: '4px', padding: '0 8px', fontSize: '11px', fontWeight: 800, whiteSpace: 'nowrap' } }, statusText(item));
+const CALIBRATOR_MASTER_OPTIONS = [
+    'PreciControl HbA1c', 'cfas HbA1C', 'AMM Cal', 'RPR CalSet', 'C fas(SUB)', 'ISE', 'FE', 'RF', 'HCY', 'C fas lipid', 'C fas P', 'C fas', 'CRP', 'HDL*LDL-C', 'Liquid Calibrator'
+];
+const INITIAL_CALIBRATOR_MATERIALS = [];
+const INITIAL_CALIBRATOR_PARALLEL_RECORDS = [
+    {
+        id: 'calpara_easyqc_10230', interfaceKey: '10230', date: '2026-03-18', part: '임상화학', reason: 'Cal Lot No 변경',
+        calibratorName: 'C fas P', deviceName: 'Cobas c 503 (main)', lotNo: '829971', oldLot: '749873', newLot: '829971', oldExp: '2026-04-30', newExp: '2026-12-31',
+        testName: 'CRP', controlCount: 2, sampleCount: 3, etcCount: 0, concentrationCriteriaUsed: false, cutoffCriteriaUsed: false,
+        biasLimit: 10, correlationLimit: 0.95, criteriaComment: '[ 평가기준 ]\n1. Correlation 0.95 이상\n2. %Diff(Bias) ±10% (낮은 농도값의 경우 ±25% 이내)',
+        rows: [
+            { no: 1, type: 'control', oldValue: 0.617, newValue: 0.614 },
+            { no: 2, type: 'control', oldValue: 4.92, newValue: 4.97 },
+            { no: 3, type: 'sample', oldValue: 2.06, newValue: 2.06 },
+            { no: 4, type: 'sample', oldValue: 0.607, newValue: 0.609 },
+            { no: 5, type: 'sample', oldValue: 0.126, newValue: 0.131 }
+        ],
+        judgement: 'Accept', overallComment: 'data결과 양호합니다.', teamComment: '', doctorComment: '', operator: '', updatedAt: '2026-03-18T00:00:00'
+    },
+    { id: 'calpara_easyqc_10228', interfaceKey: '10228', date: '2026-03-18', part: '임상화학', calibratorName: 'C fas P', deviceName: 'Cobas c 503 (sub)', lotNo: '829971', overallComment: 'date결과 양호합니다.', rows: [] },
+    { id: 'calpara_easyqc_10095', interfaceKey: '10095', date: '2026-03-03', part: '임상화학', calibratorName: 'HCY', deviceName: 'Cobas c 503 (sub)', lotNo: '895058', overallComment: 'date결과 양호합니다.', rows: [] },
+    { id: 'calpara_easyqc_10082', interfaceKey: '10082', date: '2026-03-03', part: '임상화학', calibratorName: 'HCY', deviceName: 'Cobas c 503 (main)', lotNo: '895058', overallComment: 'date결과 양호합니다.', rows: [] },
+    { id: 'calpara_easyqc_5471', interfaceKey: '5471', date: '2024-06-11', part: '임상화학', calibratorName: 'RPR CalSet', deviceName: 'c702 (SUB)', lotNo: 'C402', overallComment: '[ 반정량 검사법 평가기준 ] 1. Reactive or Non-reactive 의 일치성 2. Reactive 결과 기준. x≥1.0 Accept한 결과입니다', rows: [] },
+    { id: 'calpara_easyqc_5467', interfaceKey: '5467', date: '2024-06-11', part: '임상화학', calibratorName: 'RPR CalSet', deviceName: 'c702', lotNo: 'C402', overallComment: '[ 반정량 검사법 평가기준 ] 1. Reactive or Non-reactive 의 일치성 2. Reactive 결과 기준. x≥1.0 Accept한 결과입니다.', rows: [] },
+    { id: 'calpara_easyqc_5424', interfaceKey: '5424', date: '2024-05-31', part: '임상화학', calibratorName: 'C fas(SUB)', deviceName: 'c702 (SUB)', lotNo: '708335', overallComment: '[ 평가기준 ] Correlation 0.95 이상 / %Diff(Bias) ±10% · Accept', rows: [] },
+    { id: 'calpara_easyqc_5414', interfaceKey: '5414', date: '2024-05-30', part: '임상화학', calibratorName: 'C fas', deviceName: 'c702', lotNo: '708335', overallComment: '[ 평가기준 ] Correlation 0.95 이상 / %Diff(Bias) ±10% · Accept', rows: [] },
+    { id: 'calpara_easyqc_5240', interfaceKey: '5240', date: '2024-04-23', part: '임상화학', calibratorName: 'C fas lipid', deviceName: 'c702', lotNo: '722191', overallComment: '[ 평가기준 ] Correlation 0.95 이상 / %Diff(Bias) ±10% · Accept', rows: [] },
+    { id: 'calpara_easyqc_5147', interfaceKey: '5147', date: '2024-04-05', part: '임상화학', calibratorName: 'RF', deviceName: 'c702', lotNo: '791650', overallComment: '[ 평가기준 ] Correlation 0.95 이상 / %Diff(Bias) ±10% · Accept', rows: [] }
+];
+function mergeCalibratorParallelSeed(saved = []) {
+    const map = new Map(INITIAL_CALIBRATOR_PARALLEL_RECORDS.map(row => [row.id, { ...row, rows: (row.rows || []).map(r => ({ ...r })) }]));
+    (Array.isArray(saved) ? saved : []).forEach(row => {
+        const id = row?.id || `calpara_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        map.set(id, { ...(map.get(id) || {}), ...row, id, rows: (row.rows || map.get(id)?.rows || []).map(r => ({ ...r })) });
+    });
+    return [...map.values()];
+}
+function QcLotManagementPage({ selectedPart, controlMaterials = [], setControlMaterials, setPage, setPendingTargetMaterial }) {
+    const h = React.createElement;
+    const registrationDateOf = item => item?._isHistory ? String(item?.registeredAt || item?.startDate || '') : String(item?.registeredAt || item?.startDate || '');
+    const allRows = useMemo(() => controlMaterialDisplayRows(controlMaterials, selectedPart)
+        .filter(item => Object.values(item.levelLots || {}).some(v => String(v || '').trim()) || item.registeredAt || item.startDate || item.endDate || item.expDate)
+        .sort((a, b) => registrationDateOf(b).localeCompare(registrationDateOf(a)) || (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0) || String(a.name || '').localeCompare(String(b.name || ''))), [controlMaterials, selectedPart]);
+    const materialOptions = useMemo(() => [...new Set(allRows.map(item => item.name).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [allRows]);
+    const emptyFilters = { startDate: '', endDate: '', material: '전체', useYn: '전체' };
+    const [draftFilters, setDraftFilters] = useState(emptyFilters);
+    const [filters, setFilters] = useState(emptyFilters);
+    const [pageNo, setPageNo] = useState(1);
+    const [detailItem, setDetailItem] = useState(null);
+    const [detailDraft, setDetailDraft] = useState(null);
+    const perPage = 10;
+    useEffect(() => { setDraftFilters(emptyFilters); setFilters(emptyFilters); setPageNo(1); setDetailItem(null); setDetailDraft(null); }, [selectedPart]);
+    const isActiveRow = item => !item._isHistory && item.enabled !== false;
+    const visibleRows = useMemo(() => allRows.filter(item => {
+        const date = registrationDateOf(item);
+        if (filters.startDate && (!date || date < filters.startDate)) return false;
+        if (filters.endDate && (!date || date > filters.endDate)) return false;
+        if (filters.material !== '전체' && item.name !== filters.material) return false;
+        if (filters.useYn === '사용' && !isActiveRow(item)) return false;
+        if (filters.useYn === '미사용' && isActiveRow(item)) return false;
+        return true;
+    }), [allRows, filters]);
+    const pageCount = Math.max(1, Math.ceil(visibleRows.length / perPage));
+    useEffect(() => { if (pageNo > pageCount) setPageNo(pageCount); }, [pageNo, pageCount]);
+    const pageRows = visibleRows.slice((pageNo - 1) * perPage, pageNo * perPage);
+    const updateDraft = (key, value) => setDraftFilters(prev => ({ ...prev, [key]: value }));
+    const applyFilters = () => { setFilters({ ...draftFilters }); setPageNo(1); };
+    const searchRow = (label, child, labelWidth = '96px') => h('div', { style: { display: 'grid', gridTemplateColumns: `${labelWidth} minmax(0,1fr)`, minHeight: '40px', alignItems: 'center', borderTop: '1px solid #D4D8DD' } },
+        h('div', { style: { height: '100%', display: 'flex', alignItems: 'center', padding: '0 12px', background: '#F1F1F1', borderRight: '1px solid #D4D8DD', fontSize: '13px', fontWeight: 800, color: '#30363D', boxSizing: 'border-box' } }, label),
+        h('div', { style: { padding: '4px 8px', minWidth: 0, boxSizing: 'border-box' } }, child));
+    const scrollContentTop = () => setTimeout(() => {
+        const scroller = document.querySelector('.work-shell > div:last-child');
+        if (scroller) scroller.scrollTop = 0;
+        window.scrollTo({ top: 0, behavior: 'auto' });
+    }, 0);
+    const detailDraftFrom = item => ({
+        baseId: item?.baseId || item?.id || '',
+        part: item?.part || selectedPart || '임상화학',
+        name: item?.name || '',
+        levelLots: { level1: item?.levelLots?.level1 || '', level2: item?.levelLots?.level2 || '', level3: item?.levelLots?.level3 || '' },
+        registeredAt: item?.registeredAt || '', expDate: item?.expDate || '', startDate: item?.startDate || '', endDate: item?.endDate || ''
+    });
+    const openDetail = item => { setDetailItem(item); setDetailDraft(detailDraftFrom(item)); scrollContentTop(); };
+    const closeDetail = () => { setDetailItem(null); setDetailDraft(null); scrollContentTop(); };
+    const toggleUse = (item, event) => {
+        event?.stopPropagation?.();
+        if (item._isHistory) return;
+        const baseId = item.baseId || item.id;
+        setControlMaterials?.(prev => (Array.isArray(prev) ? prev : []).map(row => row.id === baseId ? { ...row, enabled: row.enabled === false } : row));
+        setDetailItem(prev => prev && (prev.baseId || prev.id) === baseId ? { ...prev, enabled: prev.enabled === false } : prev);
     };
-    const card = (label, value, color = T.txt) => React.createElement("div", { style: { background: T.sur, border: `1px solid ${T.bdr}`, borderRadius: '8px', padding: '12px', boxShadow: '0 1px 3px rgba(0,0,0,.04)' } },
-        React.createElement("div", { style: { fontSize: '11px', color: T.dim, fontWeight: 700, marginBottom: '6px' } }, label),
-        React.createElement("div", { style: { fontSize: '20px', fontWeight: 800, color, fontFamily: 'monospace' } }, value));
-    const activeLots = rows.filter(x => x.enabled !== false).length;
-    const inactiveLots = rows.filter(x => x.enabled === false).length;
-    const targetCount = rows.filter(x => ['reference', 'confirmed'].includes(x.targetStatus)).length;
-    return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
-        React.createElement("div", null,
-            React.createElement("div", { style: { fontSize: '20px', fontWeight: 800, letterSpacing: '-0.5px' } }, "LOT \uCD94\uC801 \uD604\uD669"),
-            React.createElement("div", { style: { fontSize: '12px', color: T.dim, marginTop: '4px' } }, "\uB4F1\uB85D\uB41C QC \uBB3C\uC9C8\uC758 LOT \uC0AC\uC6A9 \uC774\uB825\uC744 \uD655\uC778\uD569\uB2C8\uB2E4.")),
-        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: '10px' } },
-            card('QC 물질 수', rows.length, T.txt),
-            card('사용 중 QC LOT 수', activeLots, T.ok),
-            card('미사용 QC LOT 수', inactiveLots, T.muted),
-            card('Target 등록/참고값 수', targetCount, T.acc)),
-        React.createElement(DataTable, { headers: ['분과', '장비명', '정도관리물질', 'Level 1 LOT', 'Level 2 LOT', 'Level 3 LOT', '사용 시작일', '사용 종료일', '유효기간', '사용 여부', 'Target 상태'] }, rows.map((item, i) => React.createElement("tr", { key: item.id, style: { borderBottom: `1px solid ${T.bdr}`, background: i % 2 === 0 ? T.white : T.sur2 } },
-            React.createElement("td", { style: td() }, item.part || '-'),
-            React.createElement("td", { style: td('small muted') }, item.equipment || '-'),
-            React.createElement("td", { style: td('bold') }, item.name),
-            React.createElement("td", { style: td('mono muted') }, item.levelLots?.level1 || '-'),
-            React.createElement("td", { style: td('mono muted') }, item.levelLots?.level2 || '-'),
-            React.createElement("td", { style: td('mono muted') }, item.levelLots?.level3 || '-'),
-            React.createElement("td", { style: td('mono muted') }, item.startDate || '-'),
-            React.createElement("td", { style: td('mono muted') }, item.endDate || '-'),
-            React.createElement("td", { style: td('mono muted') }, item.expDate || '-'),
-            React.createElement("td", { style: td('bold', item.enabled !== false ? T.ok : T.muted) }, item.enabled !== false ? '사용' : '미사용'),
-            React.createElement("td", { style: td() }, statusBadge(item))))),
-        rows.length === 0 && React.createElement(Empty, { text: '\uB4F1\uB85D\uB41C QC LOT\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4' }));
+    const openLabTarget = (item, event) => {
+        event?.stopPropagation?.();
+        setPendingTargetMaterial?.({ type: 'focusLabTarget', part: item.part || selectedPart || '임상화학', materialId: item.baseId || item.id, deviceId: '전체' });
+        setPage?.('internal.labtarget.register');
+    };
+    const targetBadge = item => {
+        const status = item.targetStatus || 'none';
+        const cfg = status === 'confirmed' ? [T.ok, T.okLt, 'rgba(22,163,74,.28)', 'Lab Target 적용']
+            : status === 'reference' ? [T.warn, T.warnLt, 'rgba(245,158,11,.28)', 'Target 참고값']
+            : status === 'calculating' ? [T.acc, T.accLt, 'rgba(29,78,216,.24)', 'Target 산출중']
+            : [T.muted, T.sur2, T.bdr, 'Target 미등록'];
+        return h('button', { type: 'button', onClick: e => openLabTarget(item, e), style: { minHeight: '26px', background: cfg[1], color: cfg[0], border: `1px solid ${cfg[2]}`, borderRadius: '5px', padding: '3px 8px', fontSize: '11px', fontWeight: 850, cursor: 'pointer', whiteSpace: 'nowrap' } }, cfg[3]);
+    };
+    const lotsNode = item => {
+        const levels = [['1', item.levelLots?.level1], ['2', item.levelLots?.level2], ['3', item.levelLots?.level3]].filter(([, lot]) => String(lot || '').trim());
+        return h('div', { style: { display: 'flex', flexDirection: 'column', minWidth: '110px', margin: '-9px -10px' } }, levels.length ? levels.map(([level, lot], idx) => h('div', { key: level, style: { fontFamily: 'monospace', whiteSpace: 'nowrap', padding: '7px 10px', borderBottom: idx < levels.length - 1 ? `1px solid ${T.bdr}` : 'none' } }, `${level} - ${lot}`)) : h('span', { style: { color: T.muted, padding: '9px 10px' } }, '-'));
+    };
+    const statusButton = item => item._isHistory
+        ? h('span', { style: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '56px', height: '27px', border: `1px solid ${T.bdr}`, borderRadius: '5px', background: T.sur2, color: T.muted, fontSize: '11px', fontWeight: 850 } }, '미사용')
+        : h('button', { type: 'button', onClick: e => toggleUse(item, e), style: { minWidth: '56px', height: '27px', border: `1px solid ${item.enabled !== false ? 'rgba(14,165,90,.32)' : T.bdr}`, borderRadius: '5px', background: item.enabled !== false ? T.okLt : T.sur2, color: item.enabled !== false ? T.ok : T.muted, fontSize: '11px', fontWeight: 850, cursor: 'pointer' } }, item.enabled !== false ? '사용' : '미사용');
+    const headStyle = { padding: '9px 10px', textAlign: 'center', fontSize: '10px', color: T.txt2, borderRight: `1px solid ${T.bdr}`, borderBottom: `1px solid ${T.bdr}`, background: '#ECEFF3', fontWeight: 900, whiteSpace: 'nowrap' };
+    const cellStyle = (extra = {}) => ({ padding: '9px 10px', textAlign: 'center', verticalAlign: 'middle', borderRight: `1px solid ${T.bdr}`, borderBottom: `1px solid ${T.bdr}`, fontSize: '12px', color: T.txt2, ...extra });
+    const pagerButtons = [];
+    const startPage = Math.max(1, Math.min(pageNo - 4, Math.max(1, pageCount - 9)));
+    for (let p = startPage; p <= Math.min(pageCount, startPage + 9); p++) pagerButtons.push(h('button', { key: p, type: 'button', onClick: () => setPageNo(p), style: { minWidth: '30px', height: '30px', border: `1px solid ${p === pageNo ? T.acc : T.bdr}`, borderRadius: '5px', background: p === pageNo ? T.acc : T.white, color: p === pageNo ? T.white : T.txt2, fontSize: '11px', fontWeight: p === pageNo ? 900 : 700, cursor: 'pointer' } }, p));
+    const dateBlock = h('div', { style: { borderRight: '1px solid #C9CED4', minWidth: 0 } },
+        h(UnifiedDateRangeCards, { start: draftFilters.startDate, end: draftFilters.endDate, onChange: (start, end) => setDraftFilters(prev => ({ ...prev, startDate: start, endDate: end })), rangeLabel: '조회기간', startLabel: '조회시작일', endLabel: '조회종료일', labelWidth: '96px', dateMinWidth: '104px' }),
+        searchRow('사용여부', h('select', { value: draftFilters.useYn, onChange: e => updateDraft('useYn', e.target.value), style: { ...inputStyle(), height: '34px', borderRadius: '2px' } }, ['전체','사용','미사용'].map(v => h('option', { key: v, value: v }, v === '전체' ? '전체' : v))), '96px'));
+    const materialBlock = h('div', { style: { borderRight: '1px solid #C9CED4', minWidth: 0 } },
+        searchRow('정도관리물질', h('select', { value: draftFilters.material, onChange: e => updateDraft('material', e.target.value), style: { ...inputStyle(), height: '34px', borderRadius: '2px' } }, h('option', { value: '전체' }, '정도관리물질 선택'), materialOptions.map(name => h('option', { key: name, value: name }, name))), '106px'),
+        h('div', { style: { minHeight: '40px', borderTop: '1px solid #D4D8DD', background: '#FFFFFF' } }));
+    const searchBlock = h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F8F8F8', padding: '8px' } }, h('button', { type: 'button', onClick: applyFilters, style: { width: '76px', height: '36px', background: '#1B1D20', color: '#FFFFFF', border: '1px solid #17191C', fontSize: '13px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 10px rgba(30,20,20,.16)' } }, '⌕ 조회'));
+    const filterBar = h('div', { className: 'qc-panel', style: { padding: 0, overflow: 'visible', position: 'relative', zIndex: 50, borderRadius: '4px', boxShadow: 'none', border: '1px solid #C9CED4', background: '#FFFFFF' } },
+        h('div', { style: { display: 'grid', gridTemplateColumns: '150px minmax(330px,1.15fr) minmax(250px,.85fr) 92px', alignItems: 'stretch', minHeight: '82px' } },
+            h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid #C9CED4', background: '#F6F6F6', fontSize: '15px', fontWeight: 800, color: '#30363D' } }, '정도관리물질 조회'), dateBlock, materialBlock, searchBlock));
+
+    const lotMatches = (a, b) => {
+        const aa = normalizeQcLotAlias(String(a || '').trim());
+        const bb = normalizeQcLotAlias(String(b || '').trim());
+        return !!aa && !!bb && aa === bb;
+    };
+    const manufacturerRowsFor = item => {
+        if (!item) return [];
+        const direct = (Array.isArray(item.lotTests) ? item.lotTests : []).map((row, index) => {
+            const levelNo = (String(row.level || '').match(/(\d+)/) || [])[1] || String(index + 1);
+            return { testName: row.testName || row.testCode || '-', level: row.level || `Level ${levelNo}`, lot: item.levelLots?.[`level${levelNo}`] || '', mean: row.mean, sd: row.sd, min: row.min, max: row.max, unit: row.unit || '', method: row.method || '' };
+        });
+        if (direct.length) return direct;
+        const ref = CONTROL_MANUFACTURER_QC_REFERENCE[item.baseId || item.id];
+        if (!ref?.rows?.length) return [];
+        return ref.rows.filter(row => {
+            const levelNo = (String(row.level || '').match(/(\d+)/) || [])[1] || '1';
+            const actualLot = item.levelLots?.[`level${levelNo}`] || '';
+            if (!item._isHistory && !actualLot) return true;
+            return lotMatches(actualLot, row.lot);
+        });
+    };
+    const manufacturerSourceFor = item => {
+        if (Array.isArray(item?.lotTests) && item.lotTests.length) return { sourceType: 'manual', sourceLabel: '수기 입력', sourceFile: 'Control 물질 데이터입력' };
+        return CONTROL_MANUFACTURER_QC_REFERENCE[item?.baseId || item?.id] || null;
+    };
+    const fmtManufacturer = value => {
+        if (value === '' || value == null) return '-';
+        return String(value);
+    };
+    const detailFormCell = (label, content, opts = {}) => h('div', { style: { display: 'grid', gridTemplateColumns: `${opts.labelWidth || '270px'} minmax(0,1fr)`, minHeight: opts.minHeight || '46px', borderBottom: `1px solid ${T.bdr}`, background: T.white } },
+        h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: opts.centerLabel === false ? 'flex-start' : 'center', padding: '8px 14px', background: '#E7E7E7', borderRight: `1px solid ${T.bdr}`, fontSize: '14px', fontWeight: 850, color: '#30363D' } }, label),
+        h('div', { style: { display: 'flex', alignItems: 'center', minWidth: 0, padding: '6px 10px', background: '#FFFFFF' } }, content));
+    const detailInput = (value, onChange, type = 'text', width = '220px', disabled = false) => h('input', { type, value: value || '', disabled, onChange: e => onChange?.(e.target.value), style: { width, maxWidth: '100%', height: '32px', border: `1px solid ${T.bdr2 || T.bdr}`, borderRadius: '2px', padding: '0 9px', fontSize: '13px', fontFamily: type === 'date' ? 'monospace' : 'inherit', background: disabled ? T.sur2 : T.white, color: disabled ? T.dim : T.txt } });
+    const updateDetailDraft = (key, value) => setDetailDraft(prev => ({ ...(prev || {}), [key]: value }));
+    const updateDetailLot = (key, value) => setDetailDraft(prev => ({ ...(prev || {}), levelLots: { ...(prev?.levelLots || {}), [key]: value } }));
+    const saveDetail = () => {
+        if (!detailItem || detailItem._isHistory || !detailDraft) return;
+        const baseId = detailItem.baseId || detailItem.id;
+        setControlMaterials?.(prev => (Array.isArray(prev) ? prev : []).map(row => {
+            if (row.id !== baseId) return row;
+            const next = {
+                ...row,
+                part: detailDraft.part || row.part,
+                name: detailDraft.name || row.name,
+                levelLots: {
+                    level1: normalizeQcLotAlias(detailDraft.levelLots?.level1 || ''),
+                    level2: normalizeQcLotAlias(detailDraft.levelLots?.level2 || ''),
+                    level3: normalizeQcLotAlias(detailDraft.levelLots?.level3 || '')
+                },
+                registeredAt: detailDraft.registeredAt || '', expDate: detailDraft.expDate || '', startDate: detailDraft.startDate || '', endDate: detailDraft.endDate || ''
+            };
+            return mergeControlMaterialUpdate(row, next);
+        }));
+        setDetailItem(prev => ({ ...prev, ...detailDraft, levelLots: { ...(detailDraft.levelLots || {}) } }));
+        alert('저장했습니다. LOT이 변경된 경우 이전 LOT은 삭제하지 않고 이력으로 보존됩니다.');
+    };
+    const currentDetail = detailItem;
+    if (currentDetail) {
+        const detailRows = manufacturerRowsFor(currentDetail);
+        const sourceRef = manufacturerSourceFor(currentDetail);
+        const isHistory = !!currentDetail._isHistory;
+        const levelEntries = [['level1','Level 1'],['level2','Level 2'],['level3','Level 3']].filter(([key]) => String(detailDraft?.levelLots?.[key] || currentDetail.levelLots?.[key] || '').trim());
+        const sourceText = currentDetail.lotTests?.length ? '해당 과거 LOT에 저장된 제조사 제공값' : (sourceRef?.sourceFile || sourceRef?.sourceLabel || '제조사 제공값');
+        return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
+            h('div', { style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' } },
+                h('div', null,
+                    h('div', { style: { fontSize: '20px', fontWeight: 850, letterSpacing: '-0.5px' } }, 'Control 물질 입고 상세'),
+                    h('div', { style: { fontSize: '12px', color: T.dim, marginTop: '4px' } }, '입고 LOT 정보와 제조사 QC 제공값을 함께 확인합니다. 이 제조사값은 Lab Target 적용값과 별도로 보존됩니다.')),
+                h('button', { type: 'button', onClick: closeDetail, style: { height: '34px', background: T.white, color: T.txt2, border: `1px solid ${T.bdr}`, borderRadius: '6px', padding: '0 12px', fontSize: '12px', fontWeight: 850, cursor: 'pointer' } }, '← 목록')),
+            h('div', { className: 'qc-panel', style: { padding: 0, overflow: 'hidden', borderRadius: '4px', boxShadow: 'none' } },
+                detailFormCell('분과', h('div', { style: { fontSize: '13px', color: T.txt2 } }, currentDetail.part === '임상화학' ? 'Clinical Chemistry Analyzers' : (currentDetail.part || '-'))),
+                detailFormCell('정도관리물질', h('div', { style: { fontSize: '13px', color: T.txt2, fontWeight: 800 } }, currentDetail.name || '-')),
+                detailFormCell('Level별 Lot', h('div', { style: { width: '100%', display: 'flex', flexDirection: 'column', gap: '7px', padding: '4px 0' } }, levelEntries.map(([key, label]) => h('div', { key, style: { display: 'flex', alignItems: 'center', gap: '10px' } }, h('span', { style: { minWidth: '58px', fontSize: '12px', fontWeight: 750, color: T.txt2 } }, `${label} :`), detailInput(detailDraft?.levelLots?.[key] || '', value => updateDetailLot(key, value), 'text', '180px', isHistory))))),
+                detailFormCell('등록일자', detailInput(detailDraft?.registeredAt || '', value => updateDetailDraft('registeredAt', value), 'date', '180px', isHistory)),
+                detailFormCell('유효기간', detailInput(detailDraft?.expDate || '', value => updateDetailDraft('expDate', value), 'date', '180px', isHistory)),
+                detailFormCell('사용기간', h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } }, detailInput(detailDraft?.startDate || '', value => updateDetailDraft('startDate', value), 'date', '180px', isHistory), h('span', { style: { fontWeight: 850, color: T.dim } }, '~'), detailInput(detailDraft?.endDate || '', value => updateDetailDraft('endDate', value), 'date', '180px', isHistory)))),
+            h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '7px', flexWrap: 'wrap' } },
+                isHistory && h('span', { style: { marginRight: 'auto', color: T.muted, fontSize: '12px', fontWeight: 800 } }, '과거 LOT 이력 · 읽기 전용'),
+                !isHistory && h('button', { type: 'button', onClick: saveDetail, style: { height: '36px', background: T.acc, color: T.white, border: `1px solid ${T.acc}`, borderRadius: '5px', padding: '0 14px', fontSize: '12px', fontWeight: 900, cursor: 'pointer' } }, '＋ 저장'),
+                !isHistory && h('button', { type: 'button', onClick: e => toggleUse(currentDetail, e), style: { height: '36px', background: T.white, color: currentDetail.enabled !== false ? T.warn : T.ok, border: `1px solid ${T.bdr}`, borderRadius: '5px', padding: '0 14px', fontSize: '12px', fontWeight: 850, cursor: 'pointer' } }, currentDetail.enabled !== false ? '미사용 처리' : '사용 처리'),
+                h('button', { type: 'button', onClick: closeDetail, style: { height: '36px', background: T.white, color: T.txt2, border: `1px solid ${T.bdr}`, borderRadius: '5px', padding: '0 14px', fontSize: '12px', fontWeight: 850, cursor: 'pointer' } }, '취소 / 목록')),
+            h('div', { style: { fontSize: '11px', color: T.dim, lineHeight: 1.55 } },
+                '* 아래 값은 제조사 QC 제공값입니다. Lab Target 적용값과 자동으로 같은 값으로 취급하지 않습니다.',
+                h('br'),
+                '* 다른 LOT의 제조사값은 임의로 섞지 않습니다. 해당 LOT과 일치하는 값만 표시합니다.'),
+            h('div', { className: 'qc-panel', style: { padding: 0, overflow: 'hidden', borderRadius: '4px', boxShadow: 'none' } },
+                h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '9px 12px', borderBottom: `1px solid ${T.bdr}`, background: '#F7F8FA', flexWrap: 'wrap' } },
+                    h('div', { style: { fontSize: '13px', fontWeight: 900, color: T.txt } }, '제조사 QC 제공값'),
+                    h('div', { style: { fontSize: '11px', color: T.dim } }, `${sourceText} · ${detailRows.length}행`)),
+                detailRows.length ? h('div', { style: { overflowX: 'auto' } }, h('table', { style: { width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' } },
+                    h('colgroup', null, h('col', { style: { width: '24%' } }), h('col', { style: { width: '9%' } }), h('col', { style: { width: '14%' } }), h('col', { style: { width: '14%' } }), h('col', { style: { width: '14%' } }), h('col', { style: { width: '14%' } }), h('col', { style: { width: '11%' } })),
+                    h('thead', null,
+                        h('tr', null,
+                            h('th', { rowSpan: 2, style: { ...headStyle, fontSize: '12px' } }, '검사항목'),
+                            h('th', { rowSpan: 2, style: { ...headStyle, fontSize: '12px' } }, 'LEVEL'),
+                            h('th', { colSpan: 4, style: { ...headStyle, fontSize: '12px' } }, '제조사'),
+                            h('th', { rowSpan: 2, style: { ...headStyle, borderRight: 'none', fontSize: '12px' } }, '단위')),
+                        h('tr', null, ['Mean','SD','MIN','MAX'].map(label => h('th', { key: label, style: { ...headStyle, fontSize: '12px' } }, label)))),
+                    h('tbody', null, detailRows.map((row, idx) => {
+                        const next = detailRows[idx + 1];
+                        const groupEnd = !next || String(next.testName || '') !== String(row.testName || '');
+                        const rowCell = extra => ({ padding: '7px 8px', textAlign: 'center', borderRight: `1px solid ${T.bdr}`, borderBottom: groupEnd ? '2px solid #30363D' : `1px solid ${T.bdr}`, fontSize: '12px', color: T.txt2, ...extra });
+                        const levelNo = (String(row.level || '').match(/(\d+)/) || [])[1] || row.level || '-';
+                        return h('tr', { key: `${row.testName}_${row.level}_${idx}`, style: { background: T.white } },
+                            h('td', { style: rowCell({ textAlign: 'center', fontWeight: 650 }) }, row.testName || '-'),
+                            h('td', { style: rowCell({ fontFamily: 'monospace' }) }, levelNo),
+                            h('td', { style: rowCell({ fontFamily: 'monospace' }) }, fmtManufacturer(row.mean)),
+                            h('td', { style: rowCell({ fontFamily: 'monospace' }) }, fmtManufacturer(row.sd)),
+                            h('td', { style: rowCell({ fontFamily: 'monospace' }) }, fmtManufacturer(row.min)),
+                            h('td', { style: rowCell({ fontFamily: 'monospace' }) }, fmtManufacturer(row.max)),
+                            h('td', { style: { ...rowCell({ fontFamily: 'monospace' }), borderRight: 'none' } }, row.unit || '-'));
+                    })))) : h('div', { style: { padding: '28px 16px', textAlign: 'center', color: T.muted, fontSize: '12px', lineHeight: 1.6 } }, '이 LOT에 연결된 제조사 QC 제공값이 없습니다. 다른 LOT의 값을 임의로 가져오지 않습니다.')));
+    }
+
+    return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
+        h('div', null, h('div', { style: { fontSize: '20px', fontWeight: 850, letterSpacing: '-0.5px' } }, 'Control 물질 관리'), h('div', { style: { fontSize: '12px', color: T.dim, marginTop: '4px' } }, 'Control LOT 등록 · Level별 LOT · 유효기간 · 사용기간 · 사용 상태')),
+        filterBar,
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' } },
+            h('div', { style: { marginRight: 'auto', fontSize: '11px', color: T.dim } }, `조회 ${visibleRows.length}건 · 페이지 ${pageNo}/${pageCount}`),
+            h('button', { type: 'button', onClick: () => setPage?.('control.material'), style: { height: '36px', background: T.white, color: T.txt2, border: `1px solid ${T.bdr2 || T.bdr}`, borderRadius: '6px', padding: '0 13px', fontSize: '12px', fontWeight: 850, cursor: 'pointer' } }, '▣ 데이터입력')),
+        h('div', { className: 'qc-panel', style: { padding: 0, overflow: 'hidden' } }, h('div', { style: { overflowX: 'auto' } }, h('table', { style: { width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' } },
+            h('colgroup', null, h('col', { style: { width: '105px' } }), h('col', { style: { width: '145px' } }), h('col', null), h('col', { style: { width: '140px' } }), h('col', { style: { width: '105px' } }), h('col', { style: { width: '200px' } }), h('col', { style: { width: '125px' } }), h('col', { style: { width: '80px' } })),
+            h('thead', null, h('tr', null, ['등록일자','분과','정도관리물질','Level - Lot No','EXP','사용기간','Lab target 설정','상태'].map((label, idx) => h('th', { key: label, style: { ...headStyle, borderRight: idx === 7 ? 'none' : headStyle.borderRight } }, label)))),
+            h('tbody', null, pageRows.map((item, idx) => h('tr', { key: item.id, onClick: () => openDetail(item), onMouseEnter: e => { e.currentTarget.style.background = '#F2F6FC'; }, onMouseLeave: e => { e.currentTarget.style.background = idx % 2 === 0 ? T.white : '#FAFBFC'; }, style: { background: idx % 2 === 0 ? T.white : '#FAFBFC', cursor: 'pointer' } },
+                h('td', { style: cellStyle({ fontFamily: 'monospace', fontWeight: 750, color: T.acc, textDecoration: 'underline', textUnderlineOffset: '2px' }) }, registrationDateOf(item) || '-'),
+                h('td', { style: cellStyle({ fontSize: '11px', color: T.acc }) }, item.part === '임상화학' ? 'Clinical Chemistry Analyzers' : (item.part || '-')),
+                h('td', { style: cellStyle({ textAlign: 'left', fontWeight: 850, color: T.acc }) }, item.name || '-'), h('td', { style: cellStyle() }, lotsNode(item)),
+                h('td', { style: cellStyle({ fontFamily: 'monospace' }) }, item.expDate || '-'), h('td', { style: cellStyle({ fontFamily: 'monospace', fontSize: '11px' }) }, `${item.startDate || '-'} ~ ${item.endDate || '-'}`),
+                h('td', { style: cellStyle() }, targetBadge(item)), h('td', { style: { ...cellStyle(), borderRight: 'none' } }, statusButton(item)))),
+                pageRows.length === 0 && h('tr', null, h('td', { colSpan: 8, style: { padding: '24px', textAlign: 'center', color: T.muted, fontSize: '12px' } }, '조건에 맞는 Control 물질이 없습니다.')))))),
+        h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', minHeight: '34px' } },
+            h('button', { type: 'button', disabled: pageNo <= 1, onClick: () => setPageNo(1), style: { height: '30px', minWidth: '34px', border: `1px solid ${T.bdr}`, borderRadius: '5px', background: T.white, color: pageNo <= 1 ? T.muted : T.txt2 } }, '≪'),
+            h('button', { type: 'button', disabled: pageNo <= 1, onClick: () => setPageNo(p => Math.max(1, p - 1)), style: { height: '30px', minWidth: '34px', border: `1px solid ${T.bdr}`, borderRadius: '5px', background: T.white, color: pageNo <= 1 ? T.muted : T.txt2 } }, '‹'), pagerButtons,
+            h('button', { type: 'button', disabled: pageNo >= pageCount, onClick: () => setPageNo(p => Math.min(pageCount, p + 1)), style: { height: '30px', minWidth: '34px', border: `1px solid ${T.bdr}`, borderRadius: '5px', background: T.white, color: pageNo >= pageCount ? T.muted : T.txt2 } }, '›'),
+            h('button', { type: 'button', disabled: pageNo >= pageCount, onClick: () => setPageNo(pageCount), style: { height: '30px', minWidth: '34px', border: `1px solid ${T.bdr}`, borderRadius: '5px', background: T.white, color: pageNo >= pageCount ? T.muted : T.txt2 } }, '≫')));
+}
+function CalibratorMaterialsPage({ selectedPart, calibratorMaterials = [], setCalibratorMaterials, setPage, setPendingCalibratorParallel }) {
+    const h = React.createElement;
+    const blank = { id: '', part: selectedPart || '임상화학', calibratorName: '', lotNo: '', expDate: '', startDate: '', endDate: '', enabled: true };
+    const [draftFilters, setDraftFilters] = useState({ startDate: '', endDate: '', calibrator: '전체' });
+    const [filters, setFilters] = useState({ startDate: '', endDate: '', calibrator: '전체' });
+    const [formOpen, setFormOpen] = useState(false);
+    const [form, setForm] = useState(blank);
+    const [pageNo, setPageNo] = useState(1);
+    const perPage = 10;
+    useEffect(() => { setForm(prev => ({ ...prev, part: selectedPart || '임상화학' })); }, [selectedPart]);
+    const options = useMemo(() => [...new Set([...CALIBRATOR_MASTER_OPTIONS, ...(calibratorMaterials || []).map(r => r.calibratorName).filter(Boolean)])], [calibratorMaterials]);
+    const rows = useMemo(() => (Array.isArray(calibratorMaterials) ? calibratorMaterials : []).filter(row => !selectedPart || samePart(row.part || '', selectedPart)).filter(row => {
+        const date = String(row.startDate || row.registeredAt || '');
+        if (filters.startDate && (!date || date < filters.startDate)) return false;
+        if (filters.endDate && (!date || date > filters.endDate)) return false;
+        if (filters.calibrator !== '전체' && row.calibratorName !== filters.calibrator) return false;
+        return true;
+    }).sort((a,b) => String(b.startDate || b.registeredAt || '').localeCompare(String(a.startDate || a.registeredAt || ''))), [calibratorMaterials, selectedPart, filters]);
+    const pageCount = Math.max(1, Math.ceil(rows.length / perPage));
+    const pageRows = rows.slice((pageNo - 1) * perPage, pageNo * perPage);
+    useEffect(() => { if (pageNo > pageCount) setPageNo(pageCount); }, [pageNo, pageCount]);
+    const searchRow = (label, child, labelWidth = '96px') => h('div', { style: { display: 'grid', gridTemplateColumns: `${labelWidth} minmax(0,1fr)`, minHeight: '40px', alignItems: 'center', borderTop: '1px solid #D4D8DD' } }, h('div', { style: { height:'100%', display:'flex', alignItems:'center', padding:'0 12px', background:'#F1F1F1', borderRight:'1px solid #D4D8DD', fontSize:'13px', fontWeight:800, color:'#30363D' } }, label), h('div', { style: { padding:'4px 8px', minWidth:0 } }, child));
+    const dateBlock = h('div', { style: { borderRight:'1px solid #C9CED4', minWidth:0 } }, h(UnifiedDateRangeCards, { start:draftFilters.startDate, end:draftFilters.endDate, onChange:(start,end)=>setDraftFilters(prev=>({...prev,startDate:start,endDate:end})), rangeLabel:'사용기간', startLabel:'사용시작일', endLabel:'사용종료일', labelWidth:'96px', dateMinWidth:'104px' }), searchRow('분과', h('div', { style: { height:'34px', display:'flex', alignItems:'center', padding:'0 10px', border:'1px solid #C9CED4', background:'#F7F7F7', fontSize:'12px', fontWeight:750 } }, selectedPart === '임상화학' ? 'Clinical Chemistry Analyzers' : (selectedPart || '-')), '96px'));
+    const calBlock = h('div', { style: { borderRight:'1px solid #C9CED4', minWidth:0 } }, searchRow('Calibrator', h('select', { value:draftFilters.calibrator, onChange:e=>setDraftFilters(prev=>({...prev,calibrator:e.target.value})), style:{...inputStyle(),height:'34px',borderRadius:'2px'} }, h('option',{value:'전체'},'Calibrator 선택'), options.map(name=>h('option',{key:name,value:name},name))), '106px'), h('div',{style:{minHeight:'40px',borderTop:'1px solid #D4D8DD',background:'#FFFFFF'}}));
+    const filterBar = h('div',{className:'qc-panel',style:{padding:0,overflow:'visible',position:'relative',zIndex:50,borderRadius:'4px',boxShadow:'none',border:'1px solid #C9CED4',background:'#FFFFFF'}}, h('div',{style:{display:'grid',gridTemplateColumns:'150px minmax(330px,1.15fr) minmax(250px,.85fr) 92px',alignItems:'stretch',minHeight:'82px'}}, h('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',borderRight:'1px solid #C9CED4',background:'#F6F6F6',fontSize:'15px',fontWeight:800,color:'#30363D'}},'Calibrator 조회'), dateBlock, calBlock, h('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',background:'#F8F8F8',padding:'8px'}},h('button',{type:'button',onClick:()=>{setFilters({...draftFilters});setPageNo(1);},style:{width:'76px',height:'36px',background:'#1B1D20',color:'#fff',border:'1px solid #17191C',fontSize:'13px',fontWeight:800,cursor:'pointer',boxShadow:'0 4px 10px rgba(30,20,20,.16)'}},'⌕ 조회'))));
+    const saveForm = () => {
+        if (!String(form.calibratorName || '').trim() || !String(form.lotNo || '').trim()) { alert('Calibrator와 Lot No를 입력하세요.'); return; }
+        const item = { ...form, id: form.id || `calmat_${Date.now()}`, part: form.part || selectedPart || '임상화학', registeredAt: form.registeredAt || form.startDate || new Date().toISOString().slice(0,10), updatedAt:new Date().toISOString() };
+        setCalibratorMaterials?.(prev => form.id ? (prev || []).map(row => row.id === form.id ? item : row) : [...(prev || []), item]);
+        setForm(blank); setFormOpen(false);
+    };
+    const openParallel = row => { setPendingCalibratorParallel?.({ calibratorName:row.calibratorName, newLot:row.lotNo, newExp:row.expDate, part:row.part || selectedPart }); setPage?.('control.parallel'); };
+    const th = {padding:'9px 10px',fontSize:'10px',fontWeight:900,color:T.txt2,background:'#ECEFF3',borderRight:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,textAlign:'center'};
+    const td = {padding:'10px',fontSize:'12px',color:T.txt2,borderRight:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,textAlign:'center'};
+    return h('div',{style:{display:'flex',flexDirection:'column',gap:'12px'}},
+        h('div',null,h('div',{style:{fontSize:'20px',fontWeight:850,letterSpacing:'-.5px'}},'Calibrator 물질 관리'),h('div',{style:{fontSize:'12px',color:T.dim,marginTop:'4px'}},'Calibrator LOT · EXP · 사용기간 · Parallel Test 연결')),
+        filterBar,
+        h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},h('div',{style:{fontSize:'11px',color:T.dim}},`조회 ${rows.length}건 · 페이지 ${pageNo}/${pageCount}`),h('button',{type:'button',onClick:()=>{setForm(blank);setFormOpen(v=>!v);},style:{marginLeft:'auto',height:'36px',background:T.white,color:T.txt2,border:`1px solid ${T.bdr}`,borderRadius:'6px',padding:'0 13px',fontSize:'12px',fontWeight:850,cursor:'pointer'}},'▣ 데이터입력')),
+        formOpen && h('div',{className:'qc-panel',style:{padding:'12px',display:'grid',gridTemplateColumns:'repeat(3,minmax(160px,1fr))',gap:'8px'}},
+            h('div',null,h(FieldLabel,null,'분과'),h('div',{style:{...inputStyle(),display:'flex',alignItems:'center',background:T.sur2}},form.part || selectedPart || '임상화학')),
+            h('div',null,h(FieldLabel,null,'Calibrator'),h('select',{value:form.calibratorName,onChange:e=>setForm(prev=>({...prev,calibratorName:e.target.value})),style:inputStyle()},h('option',{value:''},'선택'),options.map(v=>h('option',{key:v,value:v},v)))),
+            h('div',null,h(FieldLabel,null,'Lot NO'),h('input',{value:form.lotNo,onChange:e=>setForm(prev=>({...prev,lotNo:e.target.value})),style:inputStyle()})),
+            h('div',null,h(FieldLabel,null,'EXP'),h('input',{type:'date',value:form.expDate,onChange:e=>setForm(prev=>({...prev,expDate:e.target.value})),style:inputStyle()})),
+            h('div',null,h(FieldLabel,null,'사용시작일'),h('input',{type:'date',value:form.startDate,onChange:e=>setForm(prev=>({...prev,startDate:e.target.value})),style:inputStyle()})),
+            h('div',null,h(FieldLabel,null,'사용종료일'),h('input',{type:'date',value:form.endDate,onChange:e=>setForm(prev=>({...prev,endDate:e.target.value})),style:inputStyle()})),
+            h('div',{style:{gridColumn:'1/-1',display:'flex',justifyContent:'flex-end',gap:'6px'}},h('button',{type:'button',onClick:()=>setFormOpen(false),className:'qc-btn'},'취소'),h('button',{type:'button',onClick:saveForm,className:'qc-btn',style:{background:T.acc,color:T.white,borderColor:T.acc}},'저장'))),
+        h('div',{className:'qc-panel',style:{padding:0,overflow:'hidden'}},h('table',{style:{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}},h('thead',null,h('tr',null,['분과','Calibrator','Lot NO','EXP','사용기간','Parallel Test'].map((x,i)=>h('th',{key:x,style:{...th,borderRight:i===5?'none':th.borderRight}},x)))),h('tbody',null,
+            pageRows.map((row,i)=>h('tr',{key:row.id,onDoubleClick:()=>{setForm({...row});setFormOpen(true);},style:{background:i%2?T.sur2:T.white,cursor:'default'}},
+                h('td',{style:td},row.part==='임상화학'?'Clinical Chemistry Analyzers':row.part||'-'),h('td',{style:{...td,textAlign:'left',fontWeight:850}},row.calibratorName||'-'),h('td',{style:{...td,fontFamily:'monospace'}},row.lotNo||'-'),h('td',{style:{...td,fontFamily:'monospace'}},row.expDate||'-'),h('td',{style:{...td,fontFamily:'monospace'}},`${row.startDate||'-'} ~ ${row.endDate||'-'}`),h('td',{style:{...td,borderRight:'none'}},h('button',{type:'button',onClick:()=>openParallel(row),style:{height:'28px',background:T.white,color:T.acc,border:`1px solid ${T.bdr}`,borderRadius:'5px',padding:'0 9px',fontSize:'11px',fontWeight:850,cursor:'pointer'}},'Parallel Test')))),
+            pageRows.length===0 && h('tr',null,h('td',{colSpan:6,style:{padding:'24px',textAlign:'center',color:T.muted,fontSize:'12px'}},'등록된 Calibrator 물질이 없습니다.'))))),
+        h('div',{style:{display:'flex',justifyContent:'center',gap:'5px'}},h('button',{type:'button',disabled:pageNo<=1,onClick:()=>setPageNo(p=>Math.max(1,p-1)),className:'qc-btn'},'‹'),Array.from({length:pageCount},(_,i)=>i+1).slice(Math.max(0,pageNo-5),Math.max(0,pageNo-5)+10).map(p=>h('button',{key:p,type:'button',onClick:()=>setPageNo(p),className:'qc-btn',style:p===pageNo?{background:T.acc,color:T.white,borderColor:T.acc}:{}},p)),h('button',{type:'button',disabled:pageNo>=pageCount,onClick:()=>setPageNo(p=>Math.min(pageCount,p+1)),className:'qc-btn'},'›')));
+}
+function CalibratorParallelPage({ selectedPart, calibratorParallelRecords = [], setCalibratorParallelRecords, equipmentList = [], approvalSettings = {}, pendingCalibratorParallel, setPendingCalibratorParallel }) {
+    const h = React.createElement;
+    const today = new Date().toISOString().slice(0,10);
+    const emptyDraft = () => ({ id:'', interfaceKey:'', date:today, part:selectedPart||'임상화학', reason:'Cal Lot No 변경', calibratorName:'', deviceName:'', lotNo:'', oldLot:'', newLot:'', oldExp:'', newExp:'', testName:'', controlCount:2, sampleCount:3, etcCount:0, concentrationCriteriaUsed:false, cutoffCriteriaUsed:false, biasLimit:10, correlationLimit:0.95, criteriaComment:'[ 평가기준 ]\n1. Correlation 0.95 이상\n2. %Diff(Bias) ±10% (낮은 농도값의 경우 ±25% 이내)', rows:[{no:1,type:'control',oldValue:'',newValue:''},{no:2,type:'control',oldValue:'',newValue:''},{no:3,type:'sample',oldValue:'',newValue:''},{no:4,type:'sample',oldValue:'',newValue:''},{no:5,type:'sample',oldValue:'',newValue:''}], judgement:'Accept', overallComment:'', teamComment:'', doctorComment:'', operator:'' });
+    const [draftFilters,setDraftFilters] = useState({start:'',end:'',device:'전체'});
+    const [filters,setFilters] = useState({start:'',end:'',device:'전체'});
+    const [selectedId,setSelectedId] = useState('');
+    const [editor,setEditor] = useState(null);
+    const [pageNo,setPageNo] = useState(1);
+    const perPage=10;
+    const devices = useMemo(()=>['전체',...new Set([...(equipmentList||[]).map(x=>normalizeRegisteredDeviceName(x.name||x.deviceName||'')),...(calibratorParallelRecords||[]).map(x=>x.deviceName)].filter(Boolean))],[equipmentList,calibratorParallelRecords]);
+    useEffect(()=>{ if(pendingCalibratorParallel){ const d=emptyDraft(); setEditor({...d,calibratorName:pendingCalibratorParallel.calibratorName||'',newLot:pendingCalibratorParallel.newLot||'',lotNo:pendingCalibratorParallel.newLot||'',newExp:pendingCalibratorParallel.newExp||'',part:pendingCalibratorParallel.part||selectedPart||'임상화학'}); setSelectedId(''); setPendingCalibratorParallel?.(null); } },[pendingCalibratorParallel]);
+    const rows = useMemo(()=>(calibratorParallelRecords||[]).filter(r=>!selectedPart||samePart(r.part||'',selectedPart)).filter(r=>{if(filters.start&&r.date<filters.start)return false;if(filters.end&&r.date>filters.end)return false;if(filters.device!=='전체'&&normalizeRegisteredDeviceName(r.deviceName)!==filters.device)return false;return true;}).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||String(b.interfaceKey||'').localeCompare(String(a.interfaceKey||''))),[calibratorParallelRecords,selectedPart,filters]);
+    const pageCount=Math.max(1,Math.ceil(rows.length/perPage));
+    const pageRows=rows.slice((pageNo-1)*perPage,pageNo*perPage);
+    useEffect(()=>{if(pageNo>pageCount)setPageNo(pageCount)},[pageNo,pageCount]);
+    const calc = rec => {
+        const valid=(rec?.rows||[]).map(r=>({ ...r, old:Number(r.oldValue), neu:Number(r.newValue) })).filter(r=>Number.isFinite(r.old)&&Number.isFinite(r.neu));
+        const mapped=valid.map(r=>({...r,diff:r.neu-r.old,bias:r.old!==0?((r.neu-r.old)/r.old)*100:null}));
+        const mean=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:null;
+        const xs=mapped.map(r=>r.old), ys=mapped.map(r=>r.neu), mx=mean(xs), my=mean(ys);
+        let slope=null,intercept=null,corr=null;
+        if(mapped.length>=2){const sxx=xs.reduce((s,x)=>s+(x-mx)*(x-mx),0),syy=ys.reduce((s,y)=>s+(y-my)*(y-my),0),sxy=mapped.reduce((s,r)=>s+(r.old-mx)*(r.neu-my),0);slope=sxx?sxy/sxx:null;intercept=slope==null?null:my-slope*mx;corr=sxx&&syy?sxy/Math.sqrt(sxx*syy):null;}
+        const biasVals=mapped.map(r=>r.bias).filter(Number.isFinite), diffVals=mapped.map(r=>r.diff), absBiasVals=biasVals.map(Math.abs), absDiffVals=diffVals.map(Math.abs);
+        // EasyQC 인쇄양식의 Summary는 개별 행 부호를 유지하되 Mean/Min/Max는 절대 %Bias·절대 Diff 기준으로 계산한다.
+        return {mapped,meanOld:mean(xs),meanNew:mean(ys),meanBias:mean(absBiasVals),meanDiff:mean(absDiffVals),minOld:xs.length?Math.min(...xs):null,minNew:ys.length?Math.min(...ys):null,minBias:absBiasVals.length?Math.min(...absBiasVals):null,minDiff:absDiffVals.length?Math.min(...absDiffVals):null,maxOld:xs.length?Math.max(...xs):null,maxNew:ys.length?Math.max(...ys):null,maxBias:absBiasVals.length?Math.max(...absBiasVals):null,maxDiff:absDiffVals.length?Math.max(...absDiffVals):null,slope,intercept,corr,r2:corr==null?null:corr*corr};
+    };
+    const fmt=(v,d=3)=>Number.isFinite(Number(v))?Number(v).toFixed(d).replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1'):'-';
+    const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const graphSvg = (rec,mode='scatter',asHtml=false) => { const st=calc(rec), pts=st.mapped; if(!pts.length) return asHtml?'<div class="empty">데이터 없음</div>':h('div',{style:{height:'190px',display:'flex',alignItems:'center',justifyContent:'center',color:T.muted}},'그래프 데이터 없음'); const W=520,H=240,p=42; const maxX=Math.max(1,...pts.map(r=>r.old))*1.08; const yVals=mode==='scatter'?pts.map(r=>r.neu):pts.map(r=>r.bias).filter(Number.isFinite); const minY=mode==='scatter'?0:Math.min(-Math.abs(Number(rec.biasLimit)||10),...yVals,-1); const maxY=mode==='scatter'?Math.max(1,...pts.map(r=>r.neu))*1.08:Math.max(Math.abs(Number(rec.biasLimit)||10),...yVals,1); const x=v=>p+(v/maxX)*(W-p*2); const y=v=>H-p-((v-minY)/(maxY-minY||1))*(H-p*2); const lines=[]; for(let i=0;i<=5;i++){const xx=p+i*(W-p*2)/5,yy=p+i*(H-p*2)/5;lines.push(`<line x1="${xx}" y1="${p}" x2="${xx}" y2="${H-p}" stroke="#e5e7eb"/><line x1="${p}" y1="${yy}" x2="${W-p}" y2="${yy}" stroke="#e5e7eb"/>`)} let extra=''; if(mode==='scatter'&&Number.isFinite(st.slope)&&Number.isFinite(st.intercept)){extra=`<line x1="${x(0)}" y1="${y(st.intercept)}" x2="${x(maxX)}" y2="${y(st.slope*maxX+st.intercept)}" stroke="#111827" stroke-width="1.5"/>`;} if(mode==='bias'){const lim=Math.abs(Number(rec.biasLimit)||10);extra=`<line x1="${p}" y1="${y(0)}" x2="${W-p}" y2="${y(0)}" stroke="#111827"/><line x1="${p}" y1="${y(lim)}" x2="${W-p}" y2="${y(lim)}" stroke="#ef4444" stroke-dasharray="5 4"/><line x1="${p}" y1="${y(-lim)}" x2="${W-p}" y2="${y(-lim)}" stroke="#ef4444" stroke-dasharray="5 4"/>`;}
+        const circles=pts.map(r=>`<circle cx="${x(r.old)}" cy="${y(mode==='scatter'?r.neu:r.bias)}" r="4" fill="#111827"/>`).join(''); const title=mode==='scatter'?'Old-New Calibrator 비교':'Old-New Calibrator %Diff(Bias) 비교'; const svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="white"/>${lines.join('')}${extra}${circles}<text x="${W/2}" y="20" text-anchor="middle" font-size="14" font-weight="700">${esc(title)}</text><text x="${W/2}" y="${H-6}" text-anchor="middle" font-size="11">Old 결과</text></svg>`; return asHtml?svg:h('div',{style:{border:`1px solid ${T.bdr}`,background:T.white,padding:'6px'}},h('div',{dangerouslySetInnerHTML:{__html:svg}})); };
+    const saveEditor=()=>{if(!editor)return;if(!editor.date||!editor.calibratorName||!editor.deviceName){alert('시작일자, Calibrator, 장비를 입력하세요.');return;}const item={...editor,id:editor.id||`calpara_${Date.now()}`,interfaceKey:editor.interfaceKey||String(Date.now()).slice(-6),lotNo:editor.newLot||editor.lotNo||'',updatedAt:new Date().toISOString()};setCalibratorParallelRecords?.(prev=>editor.id?(prev||[]).map(r=>r.id===editor.id?item:r):[item,...(prev||[])]);setEditor(item);setSelectedId(item.id);};
+    const printEditor=()=>{if(!editor)return;const st=calc(editor);const roles=approvalRolesForPart(approvalSettings,editor.part||selectedPart);const approval=(roles&&roles.length?roles:['담당자','팀장','전문의']).slice(0,3);const dataRows=(st.mapped||[]).map(r=>`<tr><td>${r.no}</td><td>${esc(r.type)}</td><td>${fmt(r.old,3)}</td><td>${fmt(r.neu,3)}</td><td>${r.bias==null?'-':fmt(r.bias,3)+'%'}</td><td>${fmt(r.diff,3)}</td></tr>`).join('');const w=window.open('','_blank','width=1100,height=850');if(!w){alert('팝업이 차단되었습니다.');return;}const html=`<!doctype html><html><head><meta charset="utf-8"><title>Calibrator Parallel Test</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;color:#222;font-size:10px}h1{font-size:16px;margin:0 0 8px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #9ca3af;padding:4px 6px;text-align:center}th{background:#eee}.meta td:nth-child(odd){background:#eee;font-weight:700;width:13%}.approval{width:280px;margin-left:auto;margin-bottom:8px}.approval td{height:30px}.section{font-size:12px;font-weight:800;margin:8px 0 4px;border-bottom:1px solid #555;padding-bottom:3px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.charts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.chart{border:1px solid #777;padding:3px}.empty{height:160px;display:flex;align-items:center;justify-content:center;border:1px solid #bbb}.small{font-size:9px}.logo{text-align:right;font-weight:700;color:#178b68;margin-top:5px}</style></head><body><table class="approval"><tr><th rowspan="2">결재</th>${approval.map(x=>`<th>${esc(x)}</th>`).join('')}</tr><tr>${approval.map(()=>'<td></td>').join('')}</tr><tr><th>날짜</th>${approval.map(()=>'<td></td>').join('')}</tr></table><h1>Calibrator 환자검체 비교검사(parallel test)</h1><table class="meta"><tr><td>분과</td><td>${esc(editor.part==='임상화학'?'Clinical Chemistry Analyzers':editor.part)}</td><td>시작일자</td><td>${esc(editor.date)}</td></tr><tr><td>실시사유</td><td colspan="3">${esc(editor.reason)}</td></tr><tr><td>장비</td><td>${esc(editor.deviceName)}</td><td>Calibrator물질명</td><td>${esc(editor.calibratorName)}</td></tr><tr><td>Test 횟수</td><td colspan="3">Control 수 : ${editor.controlCount||0}　Sample 수 : ${editor.sampleCount||0}　ETC 수 : ${editor.etcCount||0}</td></tr><tr><td>Comment</td><td colspan="3" style="text-align:left;white-space:pre-line">팀장: ${esc(editor.teamComment||'')}\n과장: ${esc(editor.doctorComment||'')}</td></tr></table><div class="section">평가기준</div><table><tr><th>농도 기준</th><td>${editor.concentrationCriteriaUsed?'농도기준 사용':'농도기준 미사용'}</td><th>%Bias</th><td>${esc(editor.biasLimit)} %이내</td><th>Correlation (R)</th><td>${esc(editor.correlationLimit)} 이상</td></tr><tr><th>Cut-Off 기준</th><td>${editor.cutoffCriteriaUsed?'Cut-off 기준 사용':'Cut-off 기준 미사용'}</td><td colspan="4" style="text-align:left;white-space:pre-line">${esc(editor.criteriaComment||'')}</td></tr></table><div class="section">${esc(editor.calibratorName)} 물질 정보</div><table><tr><th>구분</th><th>Old</th><th>New</th></tr><tr><th>Lot No</th><td>${esc(editor.oldLot)}</td><td>${esc(editor.newLot)}</td></tr><tr><th>Exp.</th><td>${esc(editor.oldExp)}</td><td>${esc(editor.newExp)}</td></tr></table><div class="grid2" style="margin-top:8px"><div><table><tr><th colspan="6">검사항목　${esc(editor.testName||'-')}</th></tr><tr><th>NO</th><th>구분</th><th>Old</th><th>New</th><th>%Diff(Bias)</th><th>Diff</th></tr>${dataRows}<tr><th colspan="2">Mean</th><td>${fmt(st.meanOld,3)}</td><td>${fmt(st.meanNew,3)}</td><td>${fmt(st.meanBias,3)}%</td><td>${fmt(st.meanDiff,3)}</td></tr><tr><th colspan="2">Min</th><td>${fmt(st.minOld,3)}</td><td>${fmt(st.minNew,3)}</td><td>${fmt(st.minBias,3)}%</td><td>${fmt(st.minDiff,3)}</td></tr><tr><th colspan="2">Max</th><td>${fmt(st.maxOld,3)}</td><td>${fmt(st.maxNew,3)}</td><td>${fmt(st.maxBias,3)}%</td><td>${fmt(st.maxDiff,3)}</td></tr><tr><th colspan="2">판정</th><td colspan="4">${esc(editor.judgement||'')}</td></tr><tr><th colspan="2">종합판정</th><td colspan="4" style="text-align:left">${esc(editor.overallComment||'')}</td></tr></table></div><div><div class="charts"><div class="chart">${graphSvg(editor,'scatter',true)}</div><div class="chart">${graphSvg(editor,'bias',true)}</div></div><table style="margin-top:6px"><tr><th>Slope</th><th>Intercept</th><th>Correlation (R)</th></tr><tr><td>${fmt(st.slope,3)}</td><td>${fmt(st.intercept,3)}</td><td>${fmt(st.corr,3)}</td></tr></table><div class="logo">안성성모병원</div></div></div></body></html>`;w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),300);};
+    const searchRow=(label,child,labelWidth='96px')=>h('div',{style:{display:'grid',gridTemplateColumns:`${labelWidth} minmax(0,1fr)`,minHeight:'40px',alignItems:'center',borderTop:'1px solid #D4D8DD'}},h('div',{style:{height:'100%',display:'flex',alignItems:'center',padding:'0 12px',background:'#F1F1F1',borderRight:'1px solid #D4D8DD',fontSize:'13px',fontWeight:800,color:'#30363D'}},label),h('div',{style:{padding:'4px 8px',minWidth:0}},child));
+    if(editor){const st=calc(editor);const update=(k,v)=>setEditor(prev=>({...prev,[k]:v}));const updateRow=(i,k,v)=>setEditor(prev=>({...prev,rows:(prev.rows||[]).map((r,idx)=>idx===i?{...r,[k]:v}:r)}));const addRow=type=>setEditor(prev=>({...prev,rows:[...(prev.rows||[]),{no:(prev.rows||[]).length+1,type,oldValue:'',newValue:''}],controlCount:type==='control'?Number(prev.controlCount||0)+1:prev.controlCount,sampleCount:type==='sample'?Number(prev.sampleCount||0)+1:prev.sampleCount,etcCount:type==='etc'?Number(prev.etcCount||0)+1:prev.etcCount}));const th={padding:'7px 8px',background:'#ECEFF3',border:`1px solid ${T.bdr}`,fontSize:'10px',fontWeight:850};const td={padding:'6px 8px',border:`1px solid ${T.bdr}`,fontSize:'12px'};return h('div',{style:{display:'flex',flexDirection:'column',gap:'10px'}},
+        h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},h('div',null,h('div',{style:{fontSize:'20px',fontWeight:900}},'Calibrator 환자검체 비교검사(Parallel Test)'),h('div',{style:{fontSize:'11px',color:T.dim,marginTop:'3px'}},editor.interfaceKey?`인터페이스키 ${editor.interfaceKey}`:'신규 작성')),h('div',{style:{marginLeft:'auto',display:'flex',gap:'6px'}},h('button',{type:'button',onClick:()=>{setEditor(null);setSelectedId('');},className:'qc-btn'},'목록으로'),h('button',{type:'button',onClick:saveEditor,className:'qc-btn',style:{background:T.acc,color:T.white,borderColor:T.acc}},'저장'),h('button',{type:'button',onClick:printEditor,className:'qc-btn'},'인쇄/PDF'))),
+        h('div',{className:'qc-panel',style:{padding:0,overflow:'hidden'}},h('table',{style:{width:'100%',borderCollapse:'collapse'}},h('tbody',null,
+            h('tr',null,h('th',{style:th},'분과'),h('td',{style:td},editor.part==='임상화학'?'Clinical Chemistry Analyzers':editor.part||'-'),h('th',{style:th},'시작일자'),h('td',{style:td},h('input',{type:'date',value:editor.date||'',onChange:e=>update('date',e.target.value),style:inputStyle()}))),
+            h('tr',null,h('th',{style:th},'실시사유'),h('td',{style:td,colSpan:3},h('select',{value:editor.reason||'Cal Lot No 변경',onChange:e=>update('reason',e.target.value),style:inputStyle()},h('option',{value:'Cal Lot No 변경'},'Cal Lot No 변경'),h('option',{value:'기타'},'기타')))),
+            h('tr',null,h('th',{style:th},'장비'),h('td',{style:td},h('select',{value:editor.deviceName||'',onChange:e=>update('deviceName',e.target.value),style:inputStyle()},h('option',{value:''},'선택'),devices.filter(v=>v!=='전체').map(v=>h('option',{key:v,value:v},v)))),h('th',{style:th},'Calibrator물질명'),h('td',{style:td},h('select',{value:editor.calibratorName||'',onChange:e=>update('calibratorName',e.target.value),style:inputStyle()},h('option',{value:''},'선택'),CALIBRATOR_MASTER_OPTIONS.map(v=>h('option',{key:v,value:v},v))))),
+            h('tr',null,h('th',{style:th},'Test 횟수'),h('td',{style:td,colSpan:3},`Control 수 : ${editor.controlCount||0}　 Sample 수 : ${editor.sampleCount||0}　 ETC 수 : ${editor.etcCount||0}`)),
+            h('tr',null,h('th',{style:th},'Comment'),h('td',{style:td,colSpan:3},h('textarea',{value:`팀장: ${editor.teamComment||''}\n과장: ${editor.doctorComment||''}`,readOnly:true,rows:3,style:{...inputStyle(),height:'auto',padding:'8px'}}))))),
+        h('div',{className:'qc-panel',style:{padding:'12px'}},h('div',{style:{fontSize:'14px',fontWeight:900,marginBottom:'8px'}},'평가기준'),h('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,minmax(240px,1fr))',gap:'8px'}},h('label',{style:{fontSize:'12px',fontWeight:750}},h('input',{type:'checkbox',checked:!!editor.concentrationCriteriaUsed,onChange:e=>update('concentrationCriteriaUsed',e.target.checked)}),' 농도기준 사용'),h('label',{style:{fontSize:'12px',fontWeight:750}},h('input',{type:'checkbox',checked:!!editor.cutoffCriteriaUsed,onChange:e=>update('cutoffCriteriaUsed',e.target.checked)}),' Cut-off 기준 사용'),h('div',null,h(FieldLabel,null,'%Bias'),h('input',{type:'number',value:editor.biasLimit??'',onChange:e=>update('biasLimit',e.target.value),style:inputStyle()})),h('div',null,h(FieldLabel,null,'Correlation (R)'),h('input',{type:'number',step:'0.01',value:editor.correlationLimit??'',onChange:e=>update('correlationLimit',e.target.value),style:inputStyle()})),h('div',{style:{gridColumn:'1/-1'}},h(FieldLabel,null,'Comment'),h('textarea',{value:editor.criteriaComment||'',onChange:e=>update('criteriaComment',e.target.value),rows:3,style:{...inputStyle(),height:'auto',padding:'8px'}})))),
+        h('div',{className:'qc-panel',style:{padding:0,overflow:'hidden'}},h('div',{style:{padding:'10px 12px',fontSize:'14px',fontWeight:900}},`${editor.calibratorName||'Calibrator'} 물질 정보`),h('table',{style:{width:'100%',borderCollapse:'collapse'}},h('thead',null,h('tr',null,h('th',{style:th},'구분'),h('th',{style:th},'Old'),h('th',{style:th},'New'))),h('tbody',null,h('tr',null,h('th',{style:th},'Lot No'),h('td',{style:td},h('input',{value:editor.oldLot||'',onChange:e=>update('oldLot',e.target.value),style:inputStyle()})),h('td',{style:td},h('input',{value:editor.newLot||'',onChange:e=>update('newLot',e.target.value),style:inputStyle()}))),h('tr',null,h('th',{style:th},'Exp.'),h('td',{style:td},h('input',{type:'date',value:editor.oldExp||'',onChange:e=>update('oldExp',e.target.value),style:inputStyle()})),h('td',{style:td},h('input',{type:'date',value:editor.newExp||'',onChange:e=>update('newExp',e.target.value),style:inputStyle()})))))),
+        h('div',{className:'qc-panel',style:{padding:0,overflow:'hidden'}},h('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'10px 12px'}},h('strong',null,'검사항목'),h('input',{value:editor.testName||'',onChange:e=>update('testName',e.target.value),placeholder:'검사항목',style:{...inputStyle(),width:'200px'}}),h('div',{style:{marginLeft:'auto',display:'flex',gap:'5px'}},h('button',{type:'button',onClick:()=>addRow('control'),className:'qc-btn'},'+ Control'),h('button',{type:'button',onClick:()=>addRow('sample'),className:'qc-btn'},'+ Sample'),h('button',{type:'button',onClick:()=>addRow('etc'),className:'qc-btn'},'+ ETC'))),h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'720px'}},h('thead',null,h('tr',null,['NO','구분','Old','New','%Diff(Bias)','Diff'].map(x=>h('th',{key:x,style:th},x)))),h('tbody',null,(editor.rows||[]).map((r,i)=>{const old=Number(r.oldValue),neu=Number(r.newValue),ok=Number.isFinite(old)&&Number.isFinite(neu),diff=ok?neu-old:null,bias=ok&&old!==0?diff/old*100:null;return h('tr',{key:i},h('td',{style:td},r.no||i+1),h('td',{style:td},r.type),h('td',{style:td},h('input',{value:r.oldValue??'',onChange:e=>updateRow(i,'oldValue',e.target.value),style:{...inputStyle(),height:'30px'}})),h('td',{style:td},h('input',{value:r.newValue??'',onChange:e=>updateRow(i,'newValue',e.target.value),style:{...inputStyle(),height:'30px'}})),h('td',{style:{...td,fontFamily:'monospace'}},bias==null?'-':`${fmt(bias,3)}%`),h('td',{style:{...td,fontFamily:'monospace'}},diff==null?'-':fmt(diff,3)));}),h('tr',null,h('th',{style:th,colSpan:2},'Mean'),h('td',{style:td},fmt(st.meanOld,3)),h('td',{style:td},fmt(st.meanNew,3)),h('td',{style:td},`${fmt(st.meanBias,3)}%`),h('td',{style:td},fmt(st.meanDiff,3))),h('tr',null,h('th',{style:th,colSpan:2},'Min'),h('td',{style:td},fmt(st.minOld,3)),h('td',{style:td},fmt(st.minNew,3)),h('td',{style:td},`${fmt(st.minBias,3)}%`),h('td',{style:td},fmt(st.minDiff,3))),h('tr',null,h('th',{style:th,colSpan:2},'Max'),h('td',{style:td},fmt(st.maxOld,3)),h('td',{style:td},fmt(st.maxNew,3)),h('td',{style:td},`${fmt(st.maxBias,3)}%`),h('td',{style:td},fmt(st.maxDiff,3))),h('tr',null,h('th',{style:th,colSpan:2},'판정'),h('td',{style:td,colSpan:4},h('select',{value:editor.judgement||'Accept',onChange:e=>update('judgement',e.target.value),style:inputStyle()},h('option',{value:'Accept'},'Accept'),h('option',{value:'Reject'},'Reject'))))))))),
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}},graphSvg(editor,'scatter'),graphSvg(editor,'bias')),
+        h('div',{className:'qc-panel',style:{padding:0,overflow:'hidden'}},h('table',{style:{width:'100%',borderCollapse:'collapse'}},h('thead',null,h('tr',null,['Digit','Slope','Intercept','Correlation (R)'].map(x=>h('th',{key:x,style:th},x)))),h('tbody',null,h('tr',null,h('td',{style:td},3),h('td',{style:td},fmt(st.slope,3)),h('td',{style:td},fmt(st.intercept,3)),h('td',{style:td},fmt(st.corr,3))))),h('div',{style:{padding:'10px 12px'}},h(FieldLabel,null,'종합판정'),h('textarea',{value:editor.overallComment||'',onChange:e=>update('overallComment',e.target.value),rows:3,style:{...inputStyle(),height:'auto',padding:'8px'}}))));}
+    const dateBlock=h('div',{style:{borderRight:'1px solid #C9CED4',minWidth:0}},h(UnifiedDateRangeCards,{start:draftFilters.start,end:draftFilters.end,onChange:(start,end)=>setDraftFilters(prev=>({...prev,start,end})),rangeLabel:'시행기간',startLabel:'시행시작일',endLabel:'시행종료일',labelWidth:'96px',dateMinWidth:'104px'}),searchRow('분과',h('div',{style:{height:'34px',display:'flex',alignItems:'center',padding:'0 10px',border:'1px solid #C9CED4',background:'#F7F7F7',fontSize:'12px',fontWeight:750}},selectedPart==='임상화학'?'Clinical Chemistry Analyzers':selectedPart||'-'),'96px'));
+    const deviceBlock=h('div',{style:{borderRight:'1px solid #C9CED4',minWidth:0}},searchRow('장비명',h('select',{value:draftFilters.device,onChange:e=>setDraftFilters(prev=>({...prev,device:e.target.value})),style:{...inputStyle(),height:'34px',borderRadius:'2px'}},devices.map(v=>h('option',{key:v,value:v},v==='전체'?'선택':v))),'106px'),h('div',{style:{minHeight:'40px',borderTop:'1px solid #D4D8DD',background:'#fff'}}));
+    const filterBar=h('div',{className:'qc-panel',style:{padding:0,overflow:'visible',position:'relative',zIndex:50,borderRadius:'4px',boxShadow:'none',border:'1px solid #C9CED4',background:'#fff'}},h('div',{style:{display:'grid',gridTemplateColumns:'150px minmax(330px,1.15fr) minmax(250px,.85fr) 92px',alignItems:'stretch',minHeight:'82px'}},h('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',borderRight:'1px solid #C9CED4',background:'#F6F6F6',fontSize:'15px',fontWeight:800,color:'#30363D'}},'Parallel Test 조회'),dateBlock,deviceBlock,h('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',background:'#F8F8F8',padding:'8px'}},h('button',{type:'button',onClick:()=>{setFilters({...draftFilters});setPageNo(1)},style:{width:'76px',height:'36px',background:'#1B1D20',color:'#fff',border:'1px solid #17191C',fontSize:'13px',fontWeight:800,cursor:'pointer'}},'⌕ 조회'))));
+    const th={padding:'9px 10px',fontSize:'10px',fontWeight:900,color:T.txt2,background:'#ECEFF3',borderRight:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,textAlign:'center'};const td={padding:'9px 10px',fontSize:'12px',color:T.txt2,borderRight:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,textAlign:'center'};
+    return h('div',{style:{display:'flex',flexDirection:'column',gap:'12px'}},h('div',null,h('div',{style:{fontSize:'20px',fontWeight:850}},'Calibrator 환자 검체 비교검사(Parallel Test)'),h('div',{style:{fontSize:'12px',color:T.dim,marginTop:'4px'}},'Old/New Calibrator LOT 비교 · %Diff(Bias) · Correlation · 종합판정 · PDF 인쇄')),filterBar,
+        h('div',{style:{display:'flex',alignItems:'center'}},h('span',{style:{fontSize:'11px',color:T.dim}},`조회 ${rows.length}건 · 페이지 ${pageNo}/${pageCount}`),h('button',{type:'button',onClick:()=>{setEditor(emptyDraft());setSelectedId('')},style:{marginLeft:'auto',height:'36px',background:T.white,color:T.txt2,border:`1px solid ${T.bdr}`,borderRadius:'6px',padding:'0 13px',fontSize:'12px',fontWeight:850,cursor:'pointer'}},'▣ 데이터입력')),
+        h('div',{className:'qc-panel',style:{padding:0,overflow:'hidden'}},h('table',{style:{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}},h('thead',null,h('tr',null,['시행일자','인터페이스키','Calibrator물질명','장비명','Lot No.','종합판정'].map((x,i)=>h('th',{key:x,style:{...th,borderRight:i===5?'none':th.borderRight}},x)))),h('tbody',null,pageRows.map((r,i)=>h('tr',{key:r.id,onClick:()=>{setSelectedId(r.id);setEditor({...r,rows:(r.rows||[]).map(x=>({...x}))})},style:{background:i%2?T.sur2:T.white,cursor:'pointer'}},h('td',{style:{...td,fontFamily:'monospace'}},r.date||'-'),h('td',{style:{...td,fontFamily:'monospace'}},r.interfaceKey||'-'),h('td',{style:{...td,textAlign:'left',fontWeight:850}},r.calibratorName||'-'),h('td',{style:{...td,textAlign:'left'}},r.deviceName||'-'),h('td',{style:{...td,fontFamily:'monospace'}},r.lotNo||r.newLot||'-'),h('td',{style:{...td,borderRight:'none',textAlign:'left',fontSize:'11px',whiteSpace:'pre-line'}},r.overallComment||'-'))),pageRows.length===0&&h('tr',null,h('td',{colSpan:6,style:{padding:'24px',textAlign:'center',color:T.muted}},'등록된 Parallel Test가 없습니다.'))))),
+        h('div',{style:{display:'flex',justifyContent:'center',gap:'5px'}},h('button',{type:'button',disabled:pageNo<=1,onClick:()=>setPageNo(p=>Math.max(1,p-1)),className:'qc-btn'},'‹'),Array.from({length:pageCount},(_,i)=>i+1).slice(Math.max(0,pageNo-5),Math.max(0,pageNo-5)+10).map(p=>h('button',{key:p,type:'button',onClick:()=>setPageNo(p),className:'qc-btn',style:p===pageNo?{background:T.acc,color:T.white,borderColor:T.acc}:{}},p)),h('button',{type:'button',disabled:pageNo>=pageCount,onClick:()=>setPageNo(p=>Math.min(pageCount,p+1)),className:'qc-btn'},'›')));
 }
 function PartOperatorSettingsPage({ selectedPart, partOperators = [], setPartOperators }) {
     const emptyForm = { id: '', part: selectedPart || '임상화학', name: '', role: '', enabled: true };
@@ -21514,431 +21917,239 @@ function TestMethodsPage({ equipmentList, testMethods, setTestMethods }) {
                 React.createElement("button", { onClick: () => remove(item), style: { background: T.white, border: `1px solid ${T.bdr}`, borderRadius: '4px', padding: '4px 8px', fontSize: '11px', color: T.danger, cursor: 'pointer' } }, "\uC0AD\uC81C"))))),
         rows.length === 0 && React.createElement(Empty, { text: '\uB4F1\uB85D\uB41C \uCE21\uC815\uBC29\uBC95\uC774 \uC5C6\uC2B5\uB2C8\uB2E4' }));
 }
-function ControlMaterialsPage({ title = 'Control 등록', selectedPart, controlMaterials, setControlMaterials, equipmentList = [], labTargets = [], setLabTargets, targetProfiles = [], setTargetProfiles, setPage, setPendingTargetMaterial }) {
-    const emptyForm = { id: '', part: selectedPart || '임상화학', name: '', levelLots: { level1: '', level2: '', level3: '' }, registeredAt: '', expDate: '', startDate: '', endDate: '', storageBeforeOpen: '', storageAfterOpen: '', preparationMethod: '', stabilityNote: '', targetStatus: 'none', enabled: true, sortOrder: nextSortOrder(controlMaterials) };
-    const [form, setForm] = useState(emptyForm);
-    const [isControlFormOpen, setIsControlFormOpen] = useState(false);
-    const [controlFormMode, setControlFormMode] = useState('create');
-    const [selectedControlId, setSelectedControlId] = useState('');
-    const [detailItem, setDetailItem] = useState(null);
-    const [hoveredControl, setHoveredControl] = useState(null);
-    const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
-    const setLot = (level, value) => setForm(prev => ({ ...prev, levelLots: { ...prev.levelLots, [level]: value } }));
-    const scrollControlTop = () => setTimeout(() => { document.querySelector('.work-shell > div:last-child')?.scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }); }, 0);
-    const resetControlForm = (close = true) => { setForm({ ...emptyForm, part: selectedPart || '임상화학', sortOrder: nextSortOrder(controlMaterials) }); setControlFormMode('create'); setSelectedControlId(''); if (close)
-        setIsControlFormOpen(false); };
-    const closeControlForm = () => resetControlForm(true);
-    const openControlForm = (mode, item = null) => { setControlFormMode(mode); setSelectedControlId(item?.id || ''); setIsControlFormOpen(true); scrollControlTop(); };
-    const openCreate = () => { resetControlForm(false); openControlForm('create'); };
-    useEffect(() => { resetControlForm(true); }, [selectedPart]);
-    const relatedTo = (item, target) => samePart(target.part, selectedPart) && (target.controlMaterialId === item.id || target.controlMaterialName === item.name);
-    const restoreScroll = (pos) => requestAnimationFrame(() => { if (pos.scroller) {
-        pos.scroller.scrollTop = pos.top;
-        pos.scroller.scrollLeft = pos.left;
-    } window.scrollTo(pos.winX, pos.winY); requestAnimationFrame(() => { if (pos.scroller) {
-        pos.scroller.scrollTop = pos.top;
-        pos.scroller.scrollLeft = pos.left;
-    } window.scrollTo(pos.winX, pos.winY); }); });
-    const toggleEnabled = (item, e) => {
-        e?.preventDefault();
-        e?.stopPropagation();
-        const scroller = document.querySelector('.work-shell > div:last-child');
-        const pos = { scroller, top: scroller?.scrollTop || 0, left: scroller?.scrollLeft || 0, winX: window.scrollX, winY: window.scrollY };
-        e?.currentTarget?.blur();
-        setControlMaterials(prev => prev.map(x => x.id === item.id ? { ...x, enabled: !x.enabled } : x));
-        restoreScroll(pos);
+function ControlMaterialsPage({ title = 'Control 물질 데이터입력', selectedPart, controlMaterials, setControlMaterials, equipmentList = [], labTargets = [], setLabTargets, targetProfiles = [], setTargetProfiles, setPage, setPendingTargetMaterial }) {
+    const h = React.createElement;
+    const today = new Date().toISOString().slice(0, 10);
+    const activeMaterials = useMemo(() => (Array.isArray(controlMaterials) ? controlMaterials : [])
+        .filter(item => samePart(item.part, selectedPart))
+        .sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0) || String(a.name || '').localeCompare(String(b.name || ''))), [controlMaterials, selectedPart]);
+    const [selectedMaterialId, setSelectedMaterialId] = useState('');
+    const [copyPreviousLot, setCopyPreviousLot] = useState(false);
+    const [form, setForm] = useState({ part: selectedPart || '임상화학', levelLots: { level1: '', level2: '', level3: '' }, registeredAt: today, expDate: '', startDate: today, endDate: '', enabled: true, labTargetAutoRegister: true, labTargetEquipmentIds: [] });
+    const [manufacturerRows, setManufacturerRows] = useState([]);
+    const [levelLabels, setLevelLabels] = useState({ level1: 'Level 1', level2: 'Level 2', level3: 'Level 3' });
+    const [editLevelLabels, setEditLevelLabels] = useState(false);
+    const selectedMaterial = activeMaterials.find(item => item.id === selectedMaterialId) || null;
+    const equipmentOptions = useMemo(() => (Array.isArray(equipmentList) ? equipmentList : [])
+        .filter(item => item.enabled !== false && samePart(item.part, selectedPart))
+        .map(item => ({ id: item.id, name: normalizedDeviceDisplay(item.id, item.name || item.deviceName || '', equipmentList) || item.name || item.id })), [equipmentList, selectedPart]);
+    const lotNormalize = value => normalizeQcLotAlias(String(value || '').trim());
+    const getDigits = value => {
+        const text = String(value ?? '');
+        const m = text.match(/\.(\d+)/);
+        return m ? m[1].length : 0;
     };
-    const save = () => {
-        const name = form.name.trim();
-        if (!name) {
-            alert('정도관리물질명을 입력하세요.');
-            return;
-        }
-        const item = { ...form, name, levelLots: { level1: normalizeQcLotAlias(form.levelLots?.level1 || ''), level2: normalizeQcLotAlias(form.levelLots?.level2 || ''), level3: normalizeQcLotAlias(form.levelLots?.level3 || '') }, storageBeforeOpen: String(form.storageBeforeOpen || '').trim(), storageAfterOpen: String(form.storageAfterOpen || '').trim(), preparationMethod: String(form.preparationMethod || '').trim(), stabilityNote: String(form.stabilityNote || '').trim(), targetStatus: form.targetStatus || 'none', sortOrder: Number(form.sortOrder) || 0, enabled: !!form.enabled };
-        if (item.id)
-            setControlMaterials(prev => prev.map(x => x.id === item.id ? mergeControlMaterialUpdate(x, item) : x));
-        else
-            setControlMaterials(prev => [...prev, { ...item, id: `cm_${Date.now()}` }]);
-        resetControlForm(true);
+    const sourceRowsFor = material => {
+        if (!material) return [];
+        const direct = Array.isArray(material.lotTests) && material.lotTests.length ? material.lotTests : [];
+        if (direct.length) return direct.map(row => ({ ...row }));
+        const ref = CONTROL_MANUFACTURER_QC_REFERENCE[material.id];
+        return (ref?.rows || []).map(row => ({ ...row }));
     };
-    const edit = item => { setForm({ id: item.baseId || item.id, part: item.part || selectedPart || '임상화학', name: item.name || '', levelLots: { level1: item.levelLots?.level1 || '', level2: item.levelLots?.level2 || '', level3: item.levelLots?.level3 || '' }, registeredAt: item.registeredAt || '', expDate: item.expDate || '', startDate: item.startDate || '', endDate: item.endDate || '', storageBeforeOpen: item.storageBeforeOpen || '', storageAfterOpen: item.storageAfterOpen || '', preparationMethod: item.preparationMethod || '', stabilityNote: item.stabilityNote || '', targetStatus: item.targetStatus || 'none', enabled: item.enabled !== false, sortOrder: item.sortOrder || 0 }); openControlForm('edit', item); };
-    const remove = item => { const relatedCount = labTargets.filter(t => relatedTo(item, t)).length; const msg = relatedCount ? `"${item.name}" 정도관리물질을 미적용 처리할까요?
-기존 LOT 이력과 연결된 Target ${relatedCount}건은 삭제하지 않고 보존합니다.` : `"${item.name}" 정도관리물질을 미적용 처리할까요?
-기존 LOT 데이터는 삭제하지 않고 보존합니다.`; if (confirm(msg)) {
-        setControlMaterials(prev => prev.map(x => x.id === (item.baseId || item.id) ? { ...x, enabled: false, archivedAt: new Date().toISOString(), archiveReason: '사용 종료 - 이력 보존' } : x));
-        if (form.id === (item.baseId || item.id)) resetControlForm(true);
-        setDetailItem(prev => prev && (prev.baseId || prev.id) === (item.baseId || item.id) ? null : prev);
-    } };
-    const rows = controlMaterialDisplayRows(controlMaterials, selectedPart);
-    const formGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: '8px', alignItems: 'end' };
-    const btn = (text, onClick, primary = false) => React.createElement("button", { onClick: onClick, style: { height: '36px', background: primary ? T.acc : T.white, color: primary ? T.white : T.txt2, border: `1px solid ${primary ? T.acc : T.bdr}`, borderRadius: '8px', padding: '0 14px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', boxSizing: 'border-box' } }, text);
-    const lotState = item => item.status || (item.startDate && item.endDate && item.endDate < new Date().toISOString().slice(0, 10) ? '미사용' : '사용');
-    const stateButton = item => React.createElement("button", { onMouseDown: e => e.preventDefault(), onClick: e => toggleEnabled(item, e), style: { height: '26px', minWidth: '64px', background: item.enabled ? T.okLt : T.sur2, color: item.enabled ? T.ok : T.dim, border: `1px solid ${item.enabled ? 'rgba(22,163,74,.28)' : T.bdr}`, borderRadius: '4px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' } }, item.enabled ? '적용' : '미적용');
-    const statusBadge = item => { const status = item.targetStatus || 'none'; const colors = { none: [T.muted, T.sur2, T.bdr], reference: [T.warn, T.warnLt, 'rgba(245,158,11,.28)'], calculating: [T.acc, T.accLt, 'rgba(29,78,216,.24)'], confirmed: [T.ok, T.okLt, 'rgba(22,163,74,.28)'] }; const [color, bg, border] = colors[status] || colors.none; return React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', height: '24px', background: bg, color, border: `1px solid ${border}`, borderRadius: '4px', padding: '0 8px', fontSize: '11px', fontWeight: 800, whiteSpace: 'nowrap' } }, TARGET_STATUS_LABELS[status] || TARGET_STATUS_LABELS.none); };
-    const currentDetailItem = detailItem ? (() => { const base = controlMaterials.find(x => x.id === (detailItem.baseId || detailItem.id)); return base ? { ...base, ...detailItem, id: base.id, baseId: base.id } : null; })() : null;
-    const linkedLabTargets = currentDetailItem ? labTargets.filter(t => t.controlMaterialId === currentDetailItem.id) : [];
-    const linkedDeviceName = deviceId => normalizedDeviceDisplay(deviceId, '', equipmentList) || deviceId || '-';
-    const [linkedTargetDrafts, setLinkedTargetDrafts] = useState([]);
-    const [targetDeviceScope, setTargetDeviceScope] = useState({ main: true, sub: false });
-    const resetLinkedTargetDrafts = () => setLinkedTargetDrafts(linkedLabTargets.map(t => ({ ...t })));
-    useEffect(() => { resetLinkedTargetDrafts(); }, [currentDetailItem?.id, labTargets]);
-    useEffect(() => { setTargetDeviceScope({ main: true, sub: false }); }, [currentDetailItem?.id]);
-    const fmtCalc = (value, digits = 2) => Number.isFinite(value) ? Number(value.toFixed(digits)).toString() : '';
-    const calcCv = (mean, sd) => Number.isFinite(mean) && Number.isFinite(sd) && mean !== 0 ? fmtCalc(sd / mean * 100, 2) : '';
-    const setLinkedTargetDraft = (id, key, value) => setLinkedTargetDrafts(prev => prev.map(x => {
-        if (x.id !== id)
-            return x;
-        const next = { ...x, [key]: value };
+    const templateRowsFor = material => sourceRowsFor(material).map((row, idx) => {
+        const levelNo = (String(row.level || '').match(/(\d+)/) || [])[1] || String(idx + 1);
+        const digits = Math.max(getDigits(row.mean), getDigits(row.sd), getDigits(row.min), getDigits(row.max));
+        return {
+            testName: row.testName || row.testCode || '-',
+            testCode: row.testCode || row.testName || '',
+            level: row.level || `Level ${levelNo}`,
+            mean: '', sd: '', min: '', max: '',
+            unit: row.unit || '', method: row.method || '',
+            _digits: digits
+        };
+    });
+    const copiedRowsFor = material => sourceRowsFor(material).map((row, idx) => {
+        const levelNo = (String(row.level || '').match(/(\d+)/) || [])[1] || String(idx + 1);
+        const digits = Math.max(getDigits(row.mean), getDigits(row.sd), getDigits(row.min), getDigits(row.max));
+        return {
+            testName: row.testName || row.testCode || '-',
+            testCode: row.testCode || row.testName || '',
+            level: row.level || `Level ${levelNo}`,
+            mean: row.mean ?? '', sd: row.sd ?? '', min: row.min ?? '', max: row.max ?? '',
+            unit: row.unit || '', method: row.method || '',
+            _digits: digits
+        };
+    });
+    const resetForm = () => {
+        setSelectedMaterialId('');
+        setCopyPreviousLot(false);
+        setForm({ part: selectedPart || '임상화학', levelLots: { level1: '', level2: '', level3: '' }, registeredAt: today, expDate: '', startDate: today, endDate: '', enabled: true, labTargetAutoRegister: true, labTargetEquipmentIds: [] });
+        setManufacturerRows([]);
+        setLevelLabels({ level1: 'Level 1', level2: 'Level 2', level3: 'Level 3' });
+        setEditLevelLabels(false);
+    };
+    useEffect(() => { resetForm(); }, [selectedPart]);
+    const selectMaterial = id => {
+        setSelectedMaterialId(id);
+        const material = activeMaterials.find(item => item.id === id) || null;
+        setCopyPreviousLot(false);
+        setForm(prev => ({
+            ...prev,
+            part: material?.part || selectedPart || '임상화학',
+            levelLots: { level1: '', level2: '', level3: '' },
+            registeredAt: today,
+            expDate: '',
+            startDate: today,
+            endDate: '',
+            enabled: true,
+            labTargetAutoRegister: material?.labTargetAutoRegister !== false,
+            labTargetEquipmentIds: Array.isArray(material?.labTargetEquipmentIds) ? material.labTargetEquipmentIds : []
+        }));
+        setManufacturerRows(material ? templateRowsFor(material) : []);
+        setLevelLabels({ level1: material?.levelLabels?.level1 || 'Level 1', level2: material?.levelLabels?.level2 || 'Level 2', level3: material?.levelLabels?.level3 || 'Level 3' });
+    };
+    const toggleCopyPrevious = checked => {
+        setCopyPreviousLot(checked);
+        if (!selectedMaterial) return;
+        setManufacturerRows(checked ? copiedRowsFor(selectedMaterial) : templateRowsFor(selectedMaterial));
+    };
+    const setField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+    const setLot = (key, value) => setForm(prev => ({ ...prev, levelLots: { ...(prev.levelLots || {}), [key]: value } }));
+    const setEquipment = (id, checked) => setForm(prev => ({ ...prev, labTargetEquipmentIds: checked ? [...new Set([...(prev.labTargetEquipmentIds || []), id])] : (prev.labTargetEquipmentIds || []).filter(x => x !== id) }));
+    const fmtCalc = (num, digits) => Number.isFinite(num) ? num.toFixed(Math.max(0, Math.min(6, Number(digits) || 0))) : '';
+    const updateManufacturer = (index, key, value) => setManufacturerRows(prev => prev.map((row, i) => {
+        if (i !== index) return row;
+        const next = { ...row, [key]: value };
+        const digits = Number.isFinite(Number(row._digits)) ? Number(row._digits) : Math.max(getDigits(value), 2);
         if (key === 'mean' || key === 'sd') {
             const mean = parseFloat(key === 'mean' ? value : next.mean);
             const sd = parseFloat(key === 'sd' ? value : next.sd);
             if (Number.isFinite(mean) && Number.isFinite(sd)) {
-                next.min = fmtCalc(mean - 2 * sd, 2);
-                next.max = fmtCalc(mean + 2 * sd, 2);
-                next.cv = calcCv(mean, sd);
+                next.min = fmtCalc(mean - 2 * sd, digits);
+                next.max = fmtCalc(mean + 2 * sd, digits);
             }
-        }
-        if (key === 'min' || key === 'max') {
+        } else if (key === 'min' || key === 'max') {
             const min = parseFloat(key === 'min' ? value : next.min);
             const max = parseFloat(key === 'max' ? value : next.max);
             if (Number.isFinite(min) && Number.isFinite(max)) {
                 const mean = (min + max) / 2;
                 const sd = (max - min) / 4;
-                next.mean = fmtCalc(mean, 2);
-                next.sd = fmtCalc(sd, 2);
-                next.cv = calcCv(mean, sd);
+                next.mean = fmtCalc(mean, digits);
+                next.sd = fmtCalc(sd, digits);
             }
         }
         return next;
     }));
-    const setTargetScope = (key, value) => setTargetDeviceScope(prev => ({ ...prev, [key]: value }));
-    const saveLinkedTargets = () => {
-        setLabTargets?.(prev => prev.map(item => {
-            const draft = linkedTargetDrafts.find(x => x.id === item.id);
-            return draft ? { ...item, mean: draft.mean, sd: draft.sd, cv: draft.cv, min: draft.min, max: draft.max, unit: draft.unit, method: draft.method, enabled: draft.enabled } : item;
-        }));
-    };
-    const linkedTargetCell = (kind = '', color) => ({ ...td(kind, color), textAlign: 'center', verticalAlign: 'middle', padding: '5px 8px', height: '40px' });
-    const editableTargetInput = (item, key, type = 'text') => React.createElement("input", { type: type, value: item[key] ?? '', onChange: e => setLinkedTargetDraft(item.id, key, e.target.value), style: { ...inputStyle(), height: '30px', minWidth: type === 'number' ? '76px' : '110px', fontSize: '12px', padding: '0 8px', textAlign: 'center', borderRadius: '6px' } });
-    const editableTargetSelect = item => React.createElement("select", { value: item.enabled ? '사용' : '미사용', onChange: e => setLinkedTargetDraft(item.id, 'enabled', e.target.value === '사용'), style: { ...inputStyle(), height: '30px', minWidth: '82px', fontSize: '12px', padding: '0 8px', textAlign: 'center', borderRadius: '6px' } },
-        React.createElement("option", null, "\uC0AC\uC6A9"),
-        React.createElement("option", null, "\uBBF8\uC0AC\uC6A9"));
-    const registerTargetProfiles = () => {
-        if (!currentDetailItem)
-            return;
-        const scopes = [{ key: 'main', name: 'Cobas c 503 (main)', deviceId: 'eq_default_c503_main' }, { key: 'sub', name: 'Cobas c 503 (sub)', deviceId: 'eq_default_c503_sub' }].filter(x => targetDeviceScope[x.key]);
-        if (scopes.length === 0) {
-            alert('적용할 장비를 선택하세요');
-            return;
-        }
-        const baseTargetsAll = linkedTargetDrafts.length ? linkedTargetDrafts : labTargets.filter(t => t.controlMaterialId === currentDetailItem.id);
-        const manufacturerTargets = baseTargetsAll.filter(target => {
-            const sourceType = target.sourceType || target.targetSource || inferTargetSourceType(target.dataSource || target.source) || '';
-            return sourceType === TARGET_SOURCE_MANUFACTURER || /^lt_(?:pccc|co2_qc|rf|hisens_rpr|hcy|hba1c|b221)_/i.test(String(target.id || ''));
-        });
-        const baseTargets = manufacturerTargets.length ? manufacturerTargets : baseTargetsAll;
-        if (baseTargets.length === 0) {
-            alert('제조사 제공 Target 값이 없어 적용할 수 없습니다');
-            return;
-        }
-        const now = Date.now();
-        const nowIso = new Date().toISOString();
-        const applyStart = currentDetailItem.startDate || nowIso.slice(0, 10);
-        const lotFields = {
-            level1Lot: currentDetailItem.levelLots?.level1 || '',
-            level2Lot: currentDetailItem.levelLots?.level2 || '',
-            level3Lot: currentDetailItem.levelLots?.level3 || ''
+    const unitOptions = useMemo(() => [...new Set(['mg/dL','g/dL','U/L','IU/L','mmol/L','mEq/L','ug/dL','IU/mL','RU','umol/L','%','mg/L','', ...manufacturerRows.map(r => r.unit || '')])].filter((v, i, arr) => v !== '' || i === arr.length - 1), [manufacturerRows]);
+    const levelCount = useMemo(() => {
+        const nums = manufacturerRows.map(row => Number((String(row.level || '').match(/(\d+)/) || [])[1] || 0)).filter(Boolean);
+        return Math.max(2, ...nums, selectedMaterial?.levelLots?.level3 ? 3 : 0);
+    }, [manufacturerRows, selectedMaterialId]);
+    const save = () => {
+        if (!selectedMaterial) { alert('정도관리물질을 선택하세요.'); return; }
+        const lots = {
+            level1: lotNormalize(form.levelLots?.level1),
+            level2: lotNormalize(form.levelLots?.level2),
+            level3: lotNormalize(form.levelLots?.level3)
         };
-        const prepared = scopes.map((scope, scopeIndex) => {
-            const scopeDescriptor = { ...lotFields, deviceId: scope.deviceId, controlMaterialId: currentDetailItem.id };
-            const existing = targetProfiles.find(profile => targetProfileIsOperationalRegistration(profile)
-                && normalizeRegisteredDeviceId(profile.deviceId, profile.deviceName || profile.equipmentName) === scope.deviceId
-                && String(profile.controlMaterialId || '').trim() === String(currentDetailItem.id || '').trim()
-                && sameTargetProfileLotSet(profile, scopeDescriptor)
-                && (profile.sourceType === TARGET_SOURCE_MANUFACTURER || profile.targetSource === TARGET_SOURCE_MANUFACTURER || targetProfileOrigin(profile) === TARGET_PROFILE_ORIGIN_CONTROL));
-            const profileId = existing?.id || `tp_control_${now}_${scopeIndex}`;
-            const analytes = baseTargets.map((target, index) => {
-                const level = String(target.level || 'Level 1');
-                const levelNo = (level.match(/(\d+)/) || [])[1] || '1';
-                const lot = target.lot || currentDetailItem.levelLots?.[`level${levelNo}`] || '';
-                return {
-                    ...target,
-                    id: `lt_control_${now}_${scopeIndex}_${index}`,
-                    profileId,
-                    recordType: TARGET_PROFILE_RECORD_OPERATIONAL,
-                    origin: TARGET_PROFILE_ORIGIN_CONTROL,
-                    part: currentDetailItem.part,
-                    deviceId: scope.deviceId,
-                    deviceName: scope.name,
-                    equipmentName: scope.name,
-                    controlMaterialId: currentDetailItem.id,
-                    controlMaterialName: currentDetailItem.name,
-                    qcMaterialName: currentDetailItem.name,
-                    lot,
-                    applyStartDate: applyStart,
-                    effectiveStartDate: applyStart,
-                    effectiveEndDate: '',
-                    source: '제조사 제공값',
-                    dataSource: '제조사 제공값',
-                    sourceType: TARGET_SOURCE_MANUFACTURER,
-                    targetSource: TARGET_SOURCE_MANUFACTURER,
-                    targetStatus: 'confirmed',
-                    enabled: true,
-                    isActive: true,
-                    applied: true,
-                    useyn: 'Y',
-                    createdAt: target.createdAt || nowIso,
-                    updatedAt: nowIso
-                };
-            });
-            const profile = {
-                ...(existing || {}),
-                id: profileId,
-                recordType: TARGET_PROFILE_RECORD_OPERATIONAL,
-                origin: TARGET_PROFILE_ORIGIN_CONTROL,
-                part: currentDetailItem.part,
-                deviceId: scope.deviceId,
-                deviceName: scope.name,
-                equipmentName: scope.name,
-                controlMaterialId: currentDetailItem.id,
-                controlMaterialName: currentDetailItem.name,
-                ...lotFields,
-                applyDate: applyStart,
-                effectiveStartDate: applyStart,
-                effectiveEndDate: '',
-                enabled: true,
-                isActive: true,
-                applied: true,
-                useyn: 'Y',
-                fixedSd: false,
-                fixedSD: false,
-                targetStatus: 'confirmed',
-                source: '제조사 제공값',
-                dataSource: '제조사 제공값',
-                sourceType: TARGET_SOURCE_MANUFACTURER,
-                targetSource: TARGET_SOURCE_MANUFACTURER,
-                comment: existing?.comment || '정도관리물질 등록에서 제조사 Target 적용',
-                targetIds: analytes.map(row => row.id),
-                analytes,
-                createdAt: existing?.createdAt || nowIso,
-                updatedAt: nowIso
-            };
-            return { scope, scopeDescriptor, existing, profile };
-        });
-        setTargetProfiles?.(prev => {
-            let rows = Array.isArray(prev) ? [...prev] : [];
-            prepared.forEach(({ profile, scopeDescriptor }) => {
-                rows = rows.map(existing => {
-                    if (targetProfileIsSettingsRecord(existing)) return existing;
-                    const sameScope = targetProfileIsOperationalRegistration(existing)
-                        && normalizeRegisteredDeviceId(existing.deviceId, existing.deviceName || existing.equipmentName) === profile.deviceId
-                        && String(existing.controlMaterialId || '').trim() === String(currentDetailItem.id || '').trim()
-                        && sameTargetProfileLotSet(existing, scopeDescriptor);
-                    if (!sameScope || existing.id === profile.id) return existing;
-                    if (!targetProfileApplied(existing)) return existing;
-                    const existingEnd = String(existing.effectiveEndDate || '').trim();
-                    return {
-                        ...existing,
-                        enabled: false,
-                        isActive: false,
-                        applied: false,
-                        useyn: 'N',
-                        effectiveEndDate: existingEnd || previousIsoDate(applyStart),
-                        supersededBy: profile.id,
-                        updatedAt: nowIso
-                    };
-                });
-                const index = rows.findIndex(existing => existing.id === profile.id);
-                if (index >= 0) rows[index] = profile;
-                else rows.push(profile);
-            });
-            return rows;
-        });
-        setControlMaterials?.(prev => prev.map(item => item.id === currentDetailItem.id ? { ...item, targetStatus: 'confirmed' } : item));
-        setPendingTargetMaterial?.({
-            type: 'focusLabTarget',
-            part: currentDetailItem.part,
-            deviceId: prepared[0]?.scope?.deviceId || '',
-            materialId: currentDetailItem.id,
-            profileId: prepared[0]?.profile?.id || ''
-        });
-        alert(`제조사 Target이 Lab Target 등록에 ${prepared.length}건 적용되었습니다.`);
-        setPage?.('internal.labtarget.register');
+        if (!lots.level1 && !lots.level2 && !lots.level3) { alert('Level별 LOT을 하나 이상 입력하세요.'); return; }
+        const nowIso = new Date().toISOString();
+        const rows = manufacturerRows.map(row => ({
+            testName: row.testName || row.testCode || '-',
+            testCode: row.testCode || row.testName || '',
+            level: row.level || 'Level 1',
+            mean: String(row.mean ?? '').trim(),
+            sd: String(row.sd ?? '').trim(),
+            min: String(row.min ?? '').trim(),
+            max: String(row.max ?? '').trim(),
+            unit: String(row.unit || '').trim(),
+            method: String(row.method || '').trim(),
+            sourceType: 'manufacturer',
+            sourceLabel: '수기 입력'
+        }));
+        const previousSeedRows = Array.isArray(selectedMaterial.lotTests) && selectedMaterial.lotTests.length
+            ? selectedMaterial.lotTests
+            : copiedRowsFor(selectedMaterial).map(({ _digits, ...row }) => row);
+        const previousForMerge = { ...selectedMaterial, lotTests: previousSeedRows };
+        const next = {
+            ...selectedMaterial,
+            part: form.part || selectedMaterial.part || selectedPart || '임상화학',
+            levelLots: lots,
+            registeredAt: form.registeredAt || today,
+            expDate: form.expDate || '',
+            startDate: form.startDate || form.registeredAt || today,
+            endDate: form.endDate || form.expDate || '',
+            enabled: true,
+            lotTests: rows,
+            levelLabels: { ...levelLabels },
+            manufacturerQcSource: 'manual',
+            manufacturerQcUpdatedAt: nowIso,
+            labTargetAutoRegister: form.labTargetAutoRegister !== false,
+            labTargetEquipmentIds: Array.isArray(form.labTargetEquipmentIds) ? form.labTargetEquipmentIds : [],
+            targetStatus: rows.some(row => row.mean || row.sd || row.min || row.max) ? (selectedMaterial.targetStatus === 'confirmed' ? 'confirmed' : 'reference') : (selectedMaterial.targetStatus || 'none')
+        };
+        setControlMaterials?.(prev => (Array.isArray(prev) ? prev : []).map(item => item.id === selectedMaterial.id ? mergeControlMaterialUpdate(previousForMerge, next) : item));
+        alert('Control LOT과 제조사 QC 값을 저장했습니다. 제조사 값은 수기 입력값으로 보존되며, 이전 LOT은 삭제하지 않고 이력으로 남습니다.');
+        setPage?.('control.lot');
     };
-    return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-        isControlFormOpen && React.createElement(React.Fragment, null,
-            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-                React.createElement("button", { onClick: closeControlForm, style: { height: '32px', background: T.white, border: `1px solid ${T.bdr}`, borderRadius: '6px', padding: '0 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', color: T.txt2 } },
-                    "\u2190 ",
-                    detailItem ? '상세로' : '목록으로'),
-                React.createElement("div", { style: { fontSize: '16px', fontWeight: 800 } }, controlFormMode === 'edit' ? '정도관리물질 수정' : '정도관리물질 신규 등록')),
-            React.createElement("div", { className: 'qc-panel', style: { padding: '10px' } },
-                React.createElement("div", { style: formGrid },
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "\uC801\uC6A9 \uD30C\uD2B8"),
-                        React.createElement("select", { value: form.part, onChange: e => set('part', e.target.value), style: inputStyle() }, EQUIPMENT_PARTS.map(v => React.createElement("option", { key: v }, v)))),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "\uC815\uB3C4\uAD00\uB9AC\uBB3C\uC9C8\uBA85"),
-                        React.createElement("input", { value: form.name, onChange: e => set('name', e.target.value), style: inputStyle() })),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "Level 1 LOT"),
-                        React.createElement("input", { value: form.levelLots?.level1 || '', onChange: e => setLot('level1', e.target.value), style: inputStyle() })),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "Level 2 LOT"),
-                        React.createElement("input", { value: form.levelLots?.level2 || '', onChange: e => setLot('level2', e.target.value), style: inputStyle() })),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "Level 3 LOT"),
-                        React.createElement("input", { value: form.levelLots?.level3 || '', onChange: e => setLot('level3', e.target.value), style: inputStyle() })),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "\uB4F1\uB85D\uC77C\uC790"),
-                        React.createElement("input", { type: 'date', value: form.registeredAt || '', onChange: e => set('registeredAt', e.target.value), style: inputStyle() })),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "\uC720\uD6A8\uAE30\uAC04"),
-                        React.createElement("input", { type: 'date', value: form.expDate || '', onChange: e => set('expDate', e.target.value), style: inputStyle() })),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "\uC0AC\uC6A9 \uC2DC\uC791\uC77C"),
-                        React.createElement("input", { type: 'date', value: form.startDate || '', onChange: e => set('startDate', e.target.value), style: inputStyle() })),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "\uC0AC\uC6A9 \uC885\uB8CC\uC77C"),
-                        React.createElement("input", { type: 'date', value: form.endDate || '', onChange: e => set('endDate', e.target.value), style: inputStyle() })),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "개봉 전 보관"),
-                        React.createElement("input", { value: form.storageBeforeOpen || '', onChange: e => set('storageBeforeOpen', e.target.value), style: inputStyle() })),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "개봉 후 보관"),
-                        React.createElement("input", { value: form.storageAfterOpen || '', onChange: e => set('storageAfterOpen', e.target.value), style: inputStyle() })),
-                    React.createElement("div", { style: { gridColumn: 'span 2' } },
-                        React.createElement(FieldLabel, null, "조제/사용 방법"),
-                        React.createElement("textarea", { value: form.preparationMethod || '', onChange: e => set('preparationMethod', e.target.value), style: { ...inputStyle(), height: '76px', padding: '8px 10px', resize: 'vertical', lineHeight: 1.45 } })),
-                    React.createElement("div", { style: { gridColumn: 'span 2' } },
-                        React.createElement(FieldLabel, null, "안정성/비고"),
-                        React.createElement("textarea", { value: form.stabilityNote || '', onChange: e => set('stabilityNote', e.target.value), style: { ...inputStyle(), height: '76px', padding: '8px 10px', resize: 'vertical', lineHeight: 1.45 } })),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "\uC0AC\uC6A9 \uC5EC\uBD80"),
-                        React.createElement("select", { value: form.enabled ? '사용' : '미사용', onChange: e => set('enabled', e.target.value === '사용'), style: inputStyle() },
-                            React.createElement("option", null, "\uC0AC\uC6A9"),
-                            React.createElement("option", null, "\uBBF8\uC0AC\uC6A9"))),
-                    React.createElement("div", null,
-                        React.createElement(FieldLabel, null, "\uC815\uB82C\uC21C\uC11C"),
-                        React.createElement("input", { type: 'number', value: form.sortOrder, onChange: e => set('sortOrder', e.target.value), style: inputStyle() }))),
-                React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '10px' } },
-                    btn('취소', closeControlForm),
-                    btn('저장', save, true)))),
-        !isControlFormOpen && !detailItem && React.createElement(React.Fragment, null,
-            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
-                React.createElement("div", { style: { fontSize: '18px', fontWeight: 800 } }, title),
-                React.createElement("div", { style: { marginLeft: 'auto' } }, btn('신규 등록', openCreate, true))),
-            React.createElement(DataTable, { headers: ['적용 파트', '정도관리물질명', 'Level 1 LOT', 'Level 2 LOT', 'Level 3 LOT', '유효기간', '사용기간', '사용 여부'] }, rows.map(item => React.createElement("tr", { key: item.id, onClick: () => setDetailItem(item), onMouseEnter: () => setHoveredControl(item.id), onMouseLeave: () => setHoveredControl(null), style: { borderBottom: `1px solid ${T.bdr}`, background: hoveredControl === item.id ? (item.enabled ? '#eef2ff' : '#f5f7ff') : (item.enabled ? T.white : T.sur2), cursor: 'pointer', transition: 'background 0.1s' } },
-                React.createElement("td", { style: td() }, item.part),
-                React.createElement("td", { style: td('bold') }, item.name),
-                React.createElement("td", { style: td('mono muted') }, item.levelLots?.level1 || '-'),
-                React.createElement("td", { style: td('mono muted') }, item.levelLots?.level2 || '-'),
-                React.createElement("td", { style: td('mono muted') }, item.levelLots?.level3 || '-'),
-                React.createElement("td", { style: td('mono muted') }, item.expDate || '-'),
-                React.createElement("td", { style: td('mono muted') },
-                    item.startDate || '-',
-                    " ~ ",
-                    item.endDate || '-'),
-                React.createElement("td", { style: td('bold', lotState(item) === '사용' ? T.ok : T.muted) }, lotState(item))))),
-            rows.length === 0 && React.createElement(Empty, { text: '\uB4F1\uB85D\uB41C \uC815\uB3C4\uAD00\uB9AC\uBB3C\uC9C8\uC774 \uC5C6\uC2B5\uB2C8\uB2E4' })),
-        !isControlFormOpen && detailItem && React.createElement(React.Fragment, null,
-            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-                React.createElement("button", { onClick: () => setDetailItem(null), style: { height: '32px', background: T.white, border: `1px solid ${T.bdr}`, borderRadius: '6px', padding: '0 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', color: T.txt2 } }, "\u2190 \uBAA9\uB85D\uC73C\uB85C"),
-                React.createElement("div", { style: { fontSize: '16px', fontWeight: 800 } }, currentDetailItem?.name || detailItem.name),
-                currentDetailItem && React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', height: '24px', background: currentDetailItem.enabled && !currentDetailItem._isHistory ? T.okLt : T.sur2, color: currentDetailItem.enabled && !currentDetailItem._isHistory ? T.ok : T.muted, border: `1px solid ${currentDetailItem.enabled && !currentDetailItem._isHistory ? 'rgba(22,163,74,.28)' : T.bdr}`, borderRadius: '4px', padding: '0 8px', fontSize: '11px', fontWeight: 800 } }, currentDetailItem._isHistory ? '미적용 이력' : (currentDetailItem.enabled ? '사용' : '미사용'))),
-            currentDetailItem ? React.createElement(React.Fragment, null,
-                React.createElement("div", { className: 'qc-panel', style: { padding: '10px' } },
-                    React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '8px 24px', fontSize: '12px' } },
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "\uC801\uC6A9 \uD30C\uD2B8 "),
-                            React.createElement("span", { style: { color: T.txt2 } }, currentDetailItem.part || '-')),
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "\uC815\uB3C4\uAD00\uB9AC\uBB3C\uC9C8\uBA85 "),
-                            React.createElement("span", { style: { color: T.txt2, fontWeight: 700 } }, currentDetailItem.name)),
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "Level 1 LOT "),
-                            React.createElement("span", { style: { color: T.txt2, fontFamily: 'monospace' } }, currentDetailItem.levelLots?.level1 || '-')),
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "Level 2 LOT "),
-                            React.createElement("span", { style: { color: T.txt2, fontFamily: 'monospace' } }, currentDetailItem.levelLots?.level2 || '-')),
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "Level 3 LOT "),
-                            React.createElement("span", { style: { color: T.txt2, fontFamily: 'monospace' } }, currentDetailItem.levelLots?.level3 || '-')),
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "\uB4F1\uB85D\uC77C\uC790 "),
-                            React.createElement("span", { style: { color: T.txt2, fontFamily: 'monospace' } }, currentDetailItem.registeredAt || '-')),
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "\uC720\uD6A8\uAE30\uAC04 "),
-                            React.createElement("span", { style: { color: T.txt2, fontFamily: 'monospace' } }, currentDetailItem.expDate || '-')),
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "\uC0AC\uC6A9 \uC2DC\uC791\uC77C "),
-                            React.createElement("span", { style: { color: T.txt2, fontFamily: 'monospace' } }, currentDetailItem.startDate || '-')),
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "\uC0AC\uC6A9 \uC885\uB8CC\uC77C "),
-                            React.createElement("span", { style: { color: T.txt2, fontFamily: 'monospace' } }, currentDetailItem.endDate || '-')),
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "\uC0AC\uC6A9 \uC5EC\uBD80 "),
-                            React.createElement("span", { style: { fontWeight: 800, color: currentDetailItem.enabled && !currentDetailItem._isHistory ? T.ok : T.muted } }, currentDetailItem._isHistory ? '미적용(이력)' : (currentDetailItem.enabled ? '사용' : '미사용'))),
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "\uC815\uB82C\uC21C\uC11C "),
-                            React.createElement("span", { style: { color: T.txt2 } }, currentDetailItem.sortOrder || '-')),
-                        React.createElement("div", null,
-                            React.createElement("span", { style: { color: T.dim, fontWeight: 600 } }, "\uC5F0\uACB0 Target "),
-                            React.createElement("span", { style: { color: T.txt2 } },
-                                labTargets.filter(t => t.controlMaterialId === currentDetailItem.id).length,
-                                "\uAC74")))),
-                React.createElement("div", { className: 'qc-panel', style: { padding: '12px' } },
-                    React.createElement("div", { style: { fontSize: '13px', fontWeight: 900, marginBottom: '9px' } }, "EasyQC 보관 및 조제 정보"),
-                    React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(230px,1fr))', gap: '10px 18px', fontSize: '12px' } },
-                        React.createElement("div", null,
-                            React.createElement("div", { style: { color: T.dim, fontWeight: 700, marginBottom: '4px' } }, "개봉 전 보관"),
-                            React.createElement("div", { style: { color: T.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.55 } }, currentDetailItem.storageBeforeOpen || '-')),
-                        React.createElement("div", null,
-                            React.createElement("div", { style: { color: T.dim, fontWeight: 700, marginBottom: '4px' } }, "개봉 후 보관"),
-                            React.createElement("div", { style: { color: T.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.55 } }, currentDetailItem.storageAfterOpen || '-')),
-                        React.createElement("div", null,
-                            React.createElement("div", { style: { color: T.dim, fontWeight: 700, marginBottom: '4px' } }, "조제/사용 방법"),
-                            React.createElement("div", { style: { color: T.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.55 } }, currentDetailItem.preparationMethod || '-')),
-                        React.createElement("div", null,
-                            React.createElement("div", { style: { color: T.dim, fontWeight: 700, marginBottom: '4px' } }, "안정성/비고"),
-                            React.createElement("div", { style: { color: T.txt2, whiteSpace: 'pre-wrap', lineHeight: 1.55 } }, currentDetailItem.stabilityNote || '-')))),
-                React.createElement("div", { style: { display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' } },
-                    currentDetailItem._isHistory && React.createElement("span", { style: { marginRight: 'auto', color: T.muted, fontSize: '12px', fontWeight: 800 } }, "과거 LOT 이력 · 미적용(보존)"),
-                    !currentDetailItem._isHistory && btn(currentDetailItem.enabled ? '미사용 처리' : '사용 처리', e => toggleEnabled(currentDetailItem, e)),
-                    !currentDetailItem._isHistory && btn('Target값 적용', registerTargetProfiles, true),
-                    btn('목록으로', () => setDetailItem(null))),
-                currentDetailItem._isHistory ? React.createElement("div", { className: 'qc-panel', style: { padding: '12px', borderRadius: '8px', color: T.muted, fontSize: '12px', fontWeight: 700 } }, "과거 LOT은 삭제하지 않고 미적용 이력으로 보존합니다. 현재 LOT로 변경하려면 신규 LOT 등록/수정에서 새 LOT을 등록하세요.") : React.createElement("div", { className: 'qc-panel', style: { padding: '12px', borderRadius: '8px' } },
-                    React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '10px', borderBottom: `1px solid ${T.bdr}`, paddingBottom: '10px', marginBottom: '10px', flexWrap: 'wrap' } },
-                        React.createElement("div", null,
-                            React.createElement("div", { style: { fontSize: '13px', fontWeight: 800 } }, "\uC5F0\uACB0\uB41C Target \uB370\uC774\uD130"),
-                            React.createElement("div", { style: { fontSize: '11px', color: T.dim, marginTop: '2px' } }, "\uD604\uC7AC QC \uBB3C\uC9C8\uACFC \uC5F0\uACB0\uB41C \uC7A5\uBE44\uBCC4 \uAC80\uC0AC Target \uAC12")),
-                        React.createElement("label", { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 700, color: T.txt2 } },
-                            React.createElement("input", { type: 'checkbox', checked: targetDeviceScope.main, onChange: e => setTargetScope('main', e.target.checked) }),
-                            " main"),
-                        React.createElement("label", { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 700, color: T.txt2 } },
-                            React.createElement("input", { type: 'checkbox', checked: targetDeviceScope.sub, onChange: e => setTargetScope('sub', e.target.checked) }),
-                            " sub"),
-                        React.createElement("div", { style: { marginLeft: 'auto', fontSize: '11px', color: T.dim } },
-                            linkedLabTargets.length,
-                            "\uAC74"),
-                        React.createElement("button", { onClick: saveLinkedTargets, style: { height: '32px', background: T.acc, color: T.white, border: `1px solid ${T.acc}`, borderRadius: '6px', padding: '0 12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' } }, "\uC800\uC7A5"),
-                        React.createElement("button", { onClick: () => remove(currentDetailItem), style: { height: '32px', background: T.white, color: T.danger, border: `1px solid ${T.bdr}`, borderRadius: '6px', padding: '0 12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' } }, "미적용")),
-                    linkedTargetDrafts.length === 0 ? React.createElement(Empty, { text: '\uC5F0\uACB0\uB41C Target \uB370\uC774\uD130 \uC5C6\uC74C' }) : React.createElement("div", { style: { maxHeight: '420px', overflow: 'auto', border: `1px solid ${T.bdr}`, borderRadius: '6px' } },
-                        React.createElement("table", { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
-                            React.createElement("thead", null,
-                                React.createElement("tr", { style: { background: T.sur2, height: '34px' } }, ['장비명', '검사항목', 'Level', 'Mean', 'SD', 'MIN', 'MAX', '단위', '측정법', '사용 여부'].map(h => React.createElement("th", { key: h, style: { padding: '0 9px', textAlign: 'center', verticalAlign: 'middle', fontSize: '10px', color: T.dim, borderBottom: `1px solid ${T.bdr}`, fontWeight: 700, whiteSpace: 'nowrap' } }, h)))),
-                            React.createElement("tbody", null, linkedTargetDrafts.map(item => React.createElement("tr", { key: item.id, style: { borderBottom: `1px solid ${T.bdr}`, background: item.enabled ? T.white : T.sur2, height: '40px' } },
-                                React.createElement("td", { style: linkedTargetCell('bold') }, linkedDeviceName(item.deviceId)),
-                                React.createElement("td", { style: linkedTargetCell() }, item.testName || item.testCode || '-'),
-                                React.createElement("td", { style: linkedTargetCell('mono muted') }, item.level || '-'),
-                                React.createElement("td", { style: linkedTargetCell() }, editableTargetInput(item, 'mean', 'number')),
-                                React.createElement("td", { style: linkedTargetCell() }, editableTargetInput(item, 'sd', 'number')),
-                                React.createElement("td", { style: linkedTargetCell() }, editableTargetInput(item, 'min', 'number')),
-                                React.createElement("td", { style: linkedTargetCell() }, editableTargetInput(item, 'max', 'number')),
-                                React.createElement("td", { style: linkedTargetCell() }, editableTargetInput(item, 'unit')),
-                                React.createElement("td", { style: linkedTargetCell() }, editableTargetInput(item, 'method')),
-                                React.createElement("td", { style: linkedTargetCell() }, editableTargetSelect(item))))))))) : React.createElement(Empty, { text: '\uC815\uB3C4\uAD00\uB9AC\uBB3C\uC9C8\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4' })));
+    const input = (value, onChange, opts = {}) => h('input', { type: opts.type || 'text', value: value ?? '', onChange: e => onChange(e.target.value), style: { width: opts.width || '100%', height: '32px', border: '1px solid #9FA5AC', borderRadius: '2px', background: '#FFFFFF', padding: '0 8px', boxSizing: 'border-box', fontSize: '13px', fontFamily: opts.mono ? 'monospace' : 'inherit', textAlign: opts.center ? 'center' : 'left' } });
+    const rowLine = (label, content, opts = {}) => h('div', { style: { display: 'grid', gridTemplateColumns: `${opts.labelWidth || '250px'} minmax(0,1fr)`, minHeight: opts.minHeight || '46px', borderBottom: '1px solid #C5C9CE' } },
+        h('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '7px 10px', background: '#E7E7E7', borderRight: '1px solid #C5C9CE', fontSize: '14px', fontWeight: 850, color: '#30363D', textAlign: 'center' } }, label, opts.extraLabel || null),
+        h('div', { style: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', padding: '6px 10px', background: '#FFFFFF', minWidth: 0 } }, content));
+    const levelLotInputs = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', padding: '3px 0' } },
+        Array.from({ length: levelCount }, (_, idx) => {
+            const n = idx + 1, key = `level${n}`;
+            return h('div', { key, style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+                h('span', { style: { width: '68px', fontSize: '12px', fontWeight: 750, color: '#30363D' } }, `${levelLabels[key] || `Level ${n}`} :`),
+                input(form.levelLots?.[key] || '', v => setLot(key, v), { width: '180px', mono: true }));
+        }));
+    const levelLabelEditor = editLevelLabels ? h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '3px' } }, Array.from({ length: levelCount }, (_, idx) => {
+        const key = `level${idx + 1}`;
+        return h('input', { key, value: levelLabels[key] || '', onChange: e => setLevelLabels(prev => ({ ...prev, [key]: e.target.value })), style: { width: '108px', height: '26px', border: '1px solid #9FA5AC', padding: '0 6px', fontSize: '11px' } });
+    })) : null;
+    const tableHead = { borderRight: '1px solid #B8BDC3', borderBottom: '1px solid #737A82', background: '#E3E3E3', textAlign: 'center', padding: '8px 6px', fontSize: '12px', fontWeight: 850, color: '#30363D' };
+    const tableCell = { borderRight: '1px solid #C5C9CE', borderBottom: '1px solid #C5C9CE', padding: '5px 7px', fontSize: '12px', color: '#30363D', textAlign: 'center', background: '#FFFFFF' };
+    const numberCell = (row, index, key) => h('input', { value: row[key] ?? '', inputMode: 'decimal', onChange: e => updateManufacturer(index, key, e.target.value), style: { width: '100%', minWidth: 0, height: '28px', border: '1px solid #9FA5AC', borderRadius: '1px', padding: '0 6px', boxSizing: 'border-box', fontSize: '12px', textAlign: 'center', fontFamily: 'monospace' } });
+    return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
+        h('div', null,
+            h('div', { style: { fontSize: '20px', fontWeight: 850, letterSpacing: '-.5px' } }, 'Control 물질 데이터입력'),
+            h('div', { style: { fontSize: '12px', color: T.dim, marginTop: '4px' } }, 'LOT · 유효기간 · 사용기간 · 제조사 QC 제공값을 수기로 등록합니다. 제조사값은 Lab Target과 분리해 원본으로 보존합니다.')),
+        h('div', { className: 'qc-panel', style: { padding: 0, overflow: 'hidden', borderRadius: '3px', border: '1px solid #B8BDC3', boxShadow: 'none' } },
+            rowLine('분과', h('div', { style: { minWidth: '220px', height: '32px', display: 'flex', alignItems: 'center', padding: '0 8px', border: '1px solid #9FA5AC', background: '#F7F7F7', fontSize: '13px' } }, selectedPart === '임상화학' ? 'Clinical Chemistry Analyzers' : (selectedPart || '-'))),
+            rowLine('정도관리물질', h(React.Fragment, null,
+                h('select', { value: selectedMaterialId, onChange: e => selectMaterial(e.target.value), style: { width: '250px', height: '32px', border: '1px solid #9FA5AC', borderRadius: '2px', padding: '0 7px', fontSize: '13px', background: '#FFFFFF' } }, h('option', { value: '' }, '선택'), activeMaterials.map(item => h('option', { key: item.id, value: item.id }, item.name))),
+                h('label', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#30363D' } }, h('input', { type: 'checkbox', checked: copyPreviousLot, disabled: !selectedMaterial, onChange: e => toggleCopyPrevious(e.target.checked) }), '이전 Lot 복사'))),
+            rowLine('Level별 Lot', levelLotInputs, { minHeight: levelCount >= 3 ? '128px' : '96px', extraLabel: h(React.Fragment, null,
+                h('button', { type: 'button', onClick: () => setEditLevelLabels(v => !v), disabled: !selectedMaterial, style: { height: '27px', border: '1px solid #7D858D', background: '#EDF0F3', color: '#30363D', fontSize: '11px', fontWeight: 750, padding: '0 10px', cursor: selectedMaterial ? 'pointer' : 'default' } }, 'Level별 표기명칭 변경'), levelLabelEditor) }),
+            rowLine('등록일자', input(form.registeredAt, v => setField('registeredAt', v), { type: 'date', width: '150px', mono: true })),
+            rowLine('유효기간', input(form.expDate, v => { setField('expDate', v); if (!form.endDate) setField('endDate', v); }, { type: 'date', width: '150px', mono: true })),
+            rowLine('사용기간', h(React.Fragment, null,
+                input(form.startDate, v => setField('startDate', v), { type: 'date', width: '150px', mono: true }),
+                h('span', { style: { fontWeight: 800 } }, '~'),
+                input(form.endDate, v => setField('endDate', v), { type: 'date', width: '150px', mono: true }))),
+            rowLine(h(React.Fragment, null, '랩타겟 자동등록 ', h('input', { type: 'checkbox', checked: form.labTargetAutoRegister !== false, onChange: e => setField('labTargetAutoRegister', e.target.checked) })),
+                h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px 14px' } }, equipmentOptions.length ? equipmentOptions.map(item => h('label', { key: item.id, style: { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#30363D' } }, h('input', { type: 'checkbox', disabled: form.labTargetAutoRegister === false, checked: (form.labTargetEquipmentIds || []).includes(item.id), onChange: e => setEquipment(item.id, e.target.checked) }), item.name)) : h('span', { style: { color: T.muted, fontSize: '12px' } }, '등록된 장비 없음')))),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '7px' } },
+            h('button', { type: 'button', onClick: resetForm, style: { height: '36px', border: `1px solid ${T.bdr}`, background: T.white, color: T.txt2, padding: '0 14px', fontSize: '12px', fontWeight: 850, cursor: 'pointer' } }, '✕ 취소'),
+            h('button', { type: 'button', onClick: save, style: { height: '36px', border: `1px solid ${T.acc}`, background: T.acc, color: T.white, padding: '0 16px', fontSize: '12px', fontWeight: 900, cursor: 'pointer' } }, '＋ 등록')),
+        h('div', { style: { fontSize: '11px', color: T.dim, lineHeight: 1.5 } },
+            h('div', null, '* 제조사값 입력시 SD는 1SD 기준입니다. MIN, MAX는 2SD 기준으로 자동 계산됩니다.'),
+            h('div', null, '* MIN/MAX를 직접 수정하면 Mean/SD도 역산됩니다. 일일 QC 기준 Range 수정은 [Lab Target 등록]에서만 가능합니다.'),
+            h('div', null, '* 이 화면은 수기 입력 화면입니다. 새 LOT 등록 시 값은 비워두며 [이전 Lot 복사]를 선택한 경우에만 이전 제조사값을 복사합니다.')),
+        h('div', { className: 'qc-panel', style: { padding: 0, overflow: 'auto', borderRadius: '2px', border: '1px solid #B8BDC3', boxShadow: 'none' } },
+            h('table', { style: { width: '100%', minWidth: '820px', borderCollapse: 'collapse', tableLayout: 'fixed' } },
+                h('colgroup', null,
+                    h('col', { style: { width: '24%' } }), h('col', { style: { width: '8%' } }),
+                    h('col', { style: { width: '12%' } }), h('col', { style: { width: '12%' } }), h('col', { style: { width: '12%' } }), h('col', { style: { width: '12%' } }), h('col', { style: { width: '20%' } })),
+                h('thead', null,
+                    h('tr', null,
+                        h('th', { rowSpan: 2, style: tableHead }, '검사항목'),
+                        h('th', { rowSpan: 2, style: tableHead }, 'LEVEL'),
+                        h('th', { colSpan: 4, style: tableHead }, '제조사'),
+                        h('th', { rowSpan: 2, style: { ...tableHead, borderRight: 'none' } }, '단위')),
+                    h('tr', null, ['Mean','SD','MIN','MAX'].map(x => h('th', { key: x, style: tableHead }, x)))),
+                h('tbody', null,
+                    manufacturerRows.map((row, index) => h('tr', { key: `${row.testName}_${row.level}_${index}`, style: { borderTop: index > 0 && manufacturerRows[index - 1]?.testName !== row.testName ? '2px solid #20252A' : 'none' } },
+                        h('td', { style: { ...tableCell, textAlign: 'center' } }, row.testName || '-'),
+                        h('td', { style: tableCell }, (levelLabels[`level${(String(row.level).match(/(\d+)/) || [])[1] || '1'}`] || row.level || '-').replace(/^Level\s*/i, '')),
+                        h('td', { style: tableCell }, numberCell(row, index, 'mean')),
+                        h('td', { style: tableCell }, numberCell(row, index, 'sd')),
+                        h('td', { style: tableCell }, numberCell(row, index, 'min')),
+                        h('td', { style: tableCell }, numberCell(row, index, 'max')),
+                        h('td', { style: { ...tableCell, borderRight: 'none' } }, h('select', { value: row.unit || '', onChange: e => updateManufacturer(index, 'unit', e.target.value), style: { width: '100%', height: '28px', border: '1px solid #9FA5AC', background: '#FFFFFF', fontSize: '12px' } }, unitOptions.map(unit => h('option', { key: unit || '__blank', value: unit }, unit || '직접 입력/미지정')))))),
+                    manufacturerRows.length === 0 && h('tr', null, h('td', { colSpan: 7, style: { padding: '28px', textAlign: 'center', color: T.muted, fontSize: '12px' } }, selectedMaterial ? '이 Control에 등록된 제조사 검사항목 템플릿이 없습니다.' : '정도관리물질을 선택하면 수기 입력 항목이 표시됩니다.'))))));
 }
+
 function LabTargetsPage({ title = 'Lab Target 등록', screenMode = 'register', selectedPart, qcRows = [], equipmentList, controlMaterials, setControlMaterials, testMethods, labTargets, setLabTargets, targetProfiles = [], setTargetProfiles, westgardSettings = {}, setWestgardSettings, pendingLabTargetDraft, setPendingLabTargetDraft, pendingTargetMaterial, setPendingTargetMaterial, setPage }) {
     const isSettingsScreen = screenMode === 'settings';
     const normalizedEquipmentList = normalizeC503EquipmentList(equipmentList);

@@ -15589,10 +15589,45 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
     // ── V57 EasyQC-style standalone Daily manual entry ─────────────────────
     // Reference form: 시행일자/분과/장비/Control(Lot)/검사항목,
     // 전체 조치사항 선택·입력, Cal 판정, Level Value/Target, 시행자.
+    /* INYQC_EASYQC_DAILY_MULTISELECT_20260901
+       UI-only/manual-entry patch. Storage boot/migration/schema code is intentionally untouched. */
+    const manualDeviceCanonicalV61 = value => {
+        const normalized = normalizeRegisteredDeviceName(String(value || '').trim());
+        const text = String(normalized || value || '').trim();
+        const low = text.toLowerCase().replace(/\s+/g,' ');
+        if (/cobas\s*c\s*503/.test(low)) return /\bsub\b|\(sub\)/.test(low) ? 'Cobas c 503 (sub)' : 'Cobas c 503 (main)';
+        if (/b\s*221/.test(low)) return 'Cobas b221';
+        if (/nx\s*10n/.test(low)) return 'NX10N';
+        return text;
+    };
+    const manualDeviceLabelV61 = value => {
+        const canonical = manualDeviceCanonicalV61(value);
+        if (canonical === 'Cobas c 503 (main)') return 'Cobas c 503';
+        if (canonical === 'Cobas c 503 (sub)') return 'Cobas c 503(SUB)';
+        if (canonical === 'Cobas b221') return 'Cobas b221';
+        if (canonical === 'NX10N') return 'NX10N';
+        return easyQcDeviceName(canonical || value);
+    };
+    const manualDeviceMatchesV61 = (a, b) => {
+        const left = manualDeviceCanonicalV61(a), right = manualDeviceCanonicalV61(b);
+        if (!left || !right) return false;
+        const leftC503 = /^Cobas c 503/i.test(left), rightC503 = /^Cobas c 503/i.test(right);
+        if (leftC503 || rightC503) return left === right;
+        return left === right || analysisDeviceMatches(left, right);
+    };
     const manualDeviceOptionsV57 = () => {
-        const master = inyQcMasterEquipmentNames(equipmentList, selectedPart);
-        const profileNames = operationalTargetProfiles.map(profile => normalizeRegisteredDeviceName(profile?.deviceName || profile?.equipmentName || '')).filter(Boolean);
-        return [...new Set([...master, ...profileNames, ...visibleDevices].filter(Boolean))];
+        if (samePart(selectedPart, '임상화학')) return ['Cobas c 503 (main)','Cobas c 503 (sub)','Cobas b221','NX10N'];
+        const map = new Map();
+        const push = raw => {
+            const canonical = manualDeviceCanonicalV61(raw);
+            if (!canonical) return;
+            const key = canonical.toLowerCase();
+            if (!map.has(key)) map.set(key, canonical);
+        };
+        inyQcMasterEquipmentNames(equipmentList, selectedPart).forEach(push);
+        operationalTargetProfiles.forEach(profile => push(profile?.deviceName || profile?.equipmentName || profile?.deviceId || ''));
+        visibleDevices.forEach(push);
+        return [...map.values()].sort((a,b)=>manualDeviceLabelV61(a).localeCompare(manualDeviceLabelV61(b),'ko'));
     };
     const manualProfileSourceScoreV57 = profile => {
         const sourceType = profile?.sourceType || profile?.targetSource || inferTargetSourceType(profile?.dataSource || profile?.source || '');
@@ -15601,56 +15636,85 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
         return targetProfileOrigin(profile || {}) === TARGET_PROFILE_ORIGIN_CONTROL ? 10 : 25;
     };
     const manualProfileLotFieldsV57 = profile => targetProfileLotFields(profile || {});
+    const manualControlLotKeyV61 = levelLots => [levelLots?.level1 || '', levelLots?.level2 || '', levelLots?.level3 || '']
+        .map(value => normalizeQcLotAlias(String(value || '').trim())).join('|');
+    const manualControlSemanticKeyV61 = (name, levelLots) => `${inyQcControlSemanticName(name)}|${manualControlLotKeyV61(levelLots)}`;
     const manualControlOptionsV57 = () => {
-        const device = String(qcEntryEditor?.device || '').trim();
+        const device = manualDeviceCanonicalV61(qcEntryEditor?.device || '');
         if (!device) return [];
-        const map = new Map();
+        const profileByControlLot = new Map();
         operationalTargetProfiles
-            .filter(profile => targetProfileIsApplied(profile) && analysisDeviceMatches(profile?.deviceName || profile?.equipmentName || profile?.deviceId || '', device))
+            .filter(profile => targetProfileIsApplied(profile) && manualDeviceMatchesV61(profile?.deviceName || profile?.equipmentName || profile?.deviceId || '', device))
             .forEach(profile => {
                 const name = String(profile?.controlMaterialName || profile?.qcMaterialName || profile?.qcMaterial || '').trim();
                 if (!name) return;
                 const lots = manualProfileLotFieldsV57(profile);
-                const lotKey = [lots.level1Lot,lots.level2Lot,lots.level3Lot].map(value=>normalizeQcLotAlias(String(value||''))).join('|');
-                if (!lotKey.replace(/\|/g,'')) return;
-                const key = `${inyQcControlSemanticName(name)}|${lotKey}`;
-                const candidate = {
-                    key, name,
-                    controlMaterialId:String(profile?.controlMaterialId || ''),
-                    device,
-                    deviceId:String(profile?.deviceId || ''),
-                    levelLots:{ level1:lots.level1Lot||'', level2:lots.level2Lot||'', level3:lots.level3Lot||'' },
-                    profile,
-                    score:manualProfileSourceScoreV57(profile)
-                };
-                const current = map.get(key);
-                if (!current || candidate.score > current.score) map.set(key, candidate);
+                const levelLots = { level1:lots.level1Lot||'', level2:lots.level2Lot||'', level3:lots.level3Lot||'' };
+                const key = manualControlSemanticKeyV61(name, levelLots);
+                if (!manualControlLotKeyV61(levelLots).replace(/\|/g,'')) return;
+                const candidate = { profile, score:manualProfileSourceScoreV57(profile), start:String(profile?.startDate || profile?.appliedDate || '').slice(0,10) };
+                const current = profileByControlLot.get(key);
+                if (!current || candidate.score > current.score || (candidate.score === current.score && candidate.start > current.start)) profileByControlLot.set(key, candidate);
             });
-        // If no active Target profile exists, keep current registered Control available for manual input.
+        const map = new Map();
         controlMaterialDisplayRows(controlMaterials, selectedPart, 'ledger')
             .filter(item => !item?._isHistory && item?.enabled !== false)
             .forEach(item => {
-                const itemDevice = String(item?.equipment || '').trim();
-                if (itemDevice && !analysisDeviceMatches(itemDevice, device) && map.size) return;
+                const itemDevice = String(item?.equipment || item?.deviceName || '').trim();
+                if (itemDevice && !manualDeviceMatchesV61(itemDevice, device)) return;
                 const name = String(item?.name || '').trim();
                 if (!name) return;
                 const lots = item?.levelLots || {};
-                const lotKey = [lots.level1,lots.level2,lots.level3].map(value=>normalizeQcLotAlias(String(value||''))).join('|');
+                const levelLots = { level1:lots.level1||'', level2:lots.level2||'', level3:lots.level3||'' };
+                const lotKey = manualControlLotKeyV61(levelLots);
                 if (!lotKey.replace(/\|/g,'')) return;
-                const key = `${inyQcControlSemanticName(name)}|${lotKey}`;
-                if (!map.has(key)) map.set(key, {
+                const key = manualControlSemanticKeyV61(name, levelLots);
+                const profileHit = profileByControlLot.get(key)?.profile || null;
+                map.set(key, {
                     key, name,
                     controlMaterialId:String(item?.baseId || item?.id || '').replace(/__.*/,''),
-                    device, deviceId:'',
-                    levelLots:{ level1:lots.level1||'', level2:lots.level2||'', level3:lots.level3||'' },
-                    profile:null, score:0
+                    device, deviceId:String(profileHit?.deviceId || ''), levelLots,
+                    profile:profileHit, score:profileHit ? manualProfileSourceScoreV57(profileHit) : 0
                 });
             });
+        if (!map.size) {
+            profileByControlLot.forEach(({profile}, key) => {
+                const name = String(profile?.controlMaterialName || profile?.qcMaterialName || profile?.qcMaterial || '').trim();
+                const lots = manualProfileLotFieldsV57(profile);
+                const levelLots = { level1:lots.level1Lot||'', level2:lots.level2Lot||'', level3:lots.level3Lot||'' };
+                map.set(key, {
+                    key, name,
+                    controlMaterialId:String(profile?.controlMaterialId || ''),
+                    device, deviceId:String(profile?.deviceId || ''), levelLots, profile,
+                    score:manualProfileSourceScoreV57(profile)
+                });
+            });
+        }
         return [...map.values()].sort((a,b)=>a.name.localeCompare(b.name,'ko') || a.key.localeCompare(b.key));
     };
-    const manualSelectedControlV57 = () => manualControlOptionsV57().find(option => option.key === String(qcEntryEditor?.controlKey || '')) || null;
-    const manualTestOptionsV57 = () => {
-        const control = manualSelectedControlV57();
+    const manualControlLevelOptionsV61 = () => manualControlOptionsV57().flatMap(control =>
+        [['1',control.levelLots?.level1],['2',control.levelLots?.level2],['3',control.levelLots?.level3]]
+            .filter(([,lot])=>String(lot||'').trim())
+            .map(([level,lot])=>({
+                key:`${control.key}::L${level}`, controlKey:control.key, control, level, lot:String(lot).trim(),
+                label:`${control.name}-${String(lot).trim()}(L${level})`
+            }))
+    );
+    const manualSelectedControlLevelKeysV61 = () => {
+        const available = new Set(manualControlLevelOptionsV61().map(option=>option.key));
+        return safeArray(qcEntryEditor?.controlLevelKeys).map(String).filter(key=>available.has(key));
+    };
+    const manualSelectedControlLevelsV61 = () => {
+        const keys = new Set(manualSelectedControlLevelKeysV61());
+        return manualControlLevelOptionsV61().filter(option=>keys.has(option.key));
+    };
+    const manualSelectedControlsV61 = () => {
+        const map = new Map();
+        manualSelectedControlLevelsV61().forEach(option=>map.set(option.control.key, option.control));
+        return [...map.values()];
+    };
+    const manualSelectedControlV57 = () => manualSelectedControlsV61()[0] || null;
+    const manualTestsForControlV61 = control => {
         if (!control) return [];
         const map = new Map();
         const profile = control.profile;
@@ -15665,8 +15729,7 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
             const level = String(row?.level || row?.qcLevel || '').replace(/[^0-9]/g,'') || '1';
             const lot = String(level === '1' ? control.levelLots.level1 : level === '2' ? control.levelLots.level2 : level === '3' ? control.levelLots.level3 : row?.lot || '').trim();
             if (!item.levels.some(x => x.level === level)) item.levels.push({
-                level, lot,
-                mean:row?.mean, sd:row?.sd, min:row?.min, max:row?.max,
+                level, lot, mean:row?.mean, sd:row?.sd, min:row?.min, max:row?.max,
                 unit:String(row?.unit || item.unit || ''), sourceType:row?.sourceType || profile?.sourceType || profile?.targetSource || ''
             });
         });
@@ -15675,7 +15738,7 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
                 .filter(row => row?.enabled !== false && samePart(row?.part, selectedPart))
                 .filter(row => {
                     const rowDevice = row?.deviceName || row?.equipmentName || row?.equipment || row?.device || '';
-                    return !rowDevice || analysisDeviceMatches(rowDevice, qcEntryEditor?.device || '');
+                    return !rowDevice || manualDeviceMatchesV61(rowDevice, qcEntryEditor?.device || '');
                 })
                 .forEach(row => {
                     const name = String(row?.testName || row?.name || row?.displayName || row?.testCode || row?.code || '').trim();
@@ -15683,48 +15746,120 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
                     const code = String(row?.testCode || row?.code || name).trim();
                     const key = normalizeTest(code || name) || displayLookupKey(name);
                     if (map.has(key)) return;
-                    const levels = [['1',control.levelLots.level1],['2',control.levelLots.level2],['3',control.levelLots.level3]].filter(([,lot])=>String(lot||'').trim()).map(([level,lot])=>({ level, lot, mean:null, sd:null, min:null, max:null, unit:String(row?.unit || '') }));
+                    const levels = [['1',control.levelLots.level1],['2',control.levelLots.level2],['3',control.levelLots.level3]]
+                        .filter(([,lot])=>String(lot||'').trim())
+                        .map(([level,lot])=>({ level, lot, mean:null, sd:null, min:null, max:null, unit:String(row?.unit || '') }));
                     map.set(key, { key, name, code, unit:String(row?.unit || ''), levels });
                 });
         }
-        return [...map.values()].map(item => ({ ...item, levels:[...item.levels].sort((a,b)=>Number(a.level)-Number(b.level)) })).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+        return [...map.values()].map(item => ({ ...item, levels:[...item.levels].sort((a,b)=>Number(a.level)-Number(b.level)) }));
     };
-    const manualSelectedTestV57 = () => manualTestOptionsV57().find(option => option.key === String(qcEntryEditor?.testKey || '')) || null;
+    const manualTestOptionsV61 = () => {
+        const map = new Map();
+        manualSelectedControlLevelsV61().forEach(selection => {
+            manualTestsForControlV61(selection.control).forEach(test => {
+                const levelRow = safeArray(test.levels).find(level=>String(level.level)===String(selection.level));
+                if (!levelRow) return;
+                if (!map.has(test.key)) map.set(test.key, { key:test.key, name:test.name, code:test.code, unit:test.unit, rows:[] });
+                map.get(test.key).rows.push({ control:selection.control, controlLevelKey:selection.key, test, levelRow });
+            });
+        });
+        return [...map.values()].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    };
+    const manualSelectedTestKeysV61 = () => {
+        const available = new Set(manualTestOptionsV61().map(option=>option.key));
+        return safeArray(qcEntryEditor?.testKeys).map(String).filter(key=>available.has(key));
+    };
+    const manualSelectedTestsV61 = () => {
+        const keys = new Set(manualSelectedTestKeysV61());
+        return manualTestOptionsV61().filter(option=>keys.has(option.key));
+    };
+    const manualTestOptionsV57 = manualTestOptionsV61;
+    const manualSelectedTestV57 = () => manualSelectedTestsV61()[0] || null;
+    const manualEntryKeyV61 = (controlKey, testKey, level) => `${String(controlKey||'')}::${String(testKey||'')}::L${String(level||'')}`;
+    const manualEntryRowsV61 = () => manualSelectedTestsV61().flatMap(testOption => safeArray(testOption.rows).map(row => ({ ...row, selectedTest:testOption, entryKey:manualEntryKeyV61(row.control.key, testOption.key, row.levelRow.level) })));
     const openStandaloneDailyEntryV57 = () => {
         const now = new Date();
         const hhmm = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
         const recentOperator = validRows.map(row => String(row?.operator || row?.userName || row?.performer || '').trim()).find(Boolean) || '';
         setQcEntryEditor({
-            mode:'manual', standalone:true,
-            date:todayDate, time:hhmm,
-            device:'', controlKey:'', testKey:'',
-            globalAction:'', globalActionTemplate:'', overallCal:'',
-            operator:recentOperator,
-            entries:{}
+            mode:'manual', standalone:true, date:todayDate, time:hhmm,
+            device:'', controlKey:'', controlKeys:[], controlLevelKeys:[], controlLevelDraftKeys:[],
+            testKey:'', testKeys:[], testDraftKeys:[], controlPickerOpen:false, testPickerOpen:false,
+            globalAction:'', globalActionTemplate:'', overallCal:'', operator:recentOperator, entries:{}
         });
         setSelectedRunKey('');
     };
     const setStandaloneManualFieldV57 = (key, value) => setQcEntryEditor(prev => prev ? { ...prev, [key]:value } : prev);
-    const selectStandaloneManualDeviceV57 = value => setQcEntryEditor(prev => prev ? { ...prev, device:value, controlKey:'', testKey:'', entries:{} } : prev);
-    const selectStandaloneManualControlV57 = value => setQcEntryEditor(prev => prev ? { ...prev, controlKey:value, testKey:'', entries:{} } : prev);
-    const selectStandaloneManualTestV57 = value => {
-        const test = manualTestOptionsV57().find(option => option.key === value) || null;
+    const selectStandaloneManualDeviceV57 = value => setQcEntryEditor(prev => prev ? {
+        ...prev, device:manualDeviceCanonicalV61(value), controlKey:'', controlKeys:[], controlLevelKeys:[], controlLevelDraftKeys:[],
+        testKey:'', testKeys:[], testDraftKeys:[], controlPickerOpen:false, testPickerOpen:false, entries:{}
+    } : prev);
+    const openManualControlPickerV61 = () => setQcEntryEditor(prev => prev ? { ...prev, controlPickerOpen:true, testPickerOpen:false, controlLevelDraftKeys:[...safeArray(prev.controlLevelKeys)] } : prev);
+    const toggleManualControlDraftV61 = (key, checked) => setQcEntryEditor(prev => {
+        if (!prev) return prev;
+        const current = safeArray(prev.controlLevelDraftKeys).map(String);
+        const next = checked ? [...new Set([...current,key])] : current.filter(item=>item!==key);
+        return { ...prev, controlLevelDraftKeys:next };
+    });
+    const commitManualControlsV61 = () => setQcEntryEditor(prev => {
+        if (!prev) return prev;
+        const available = new Set(manualControlLevelOptionsV61().map(option=>option.key));
+        const committed = safeArray(prev.controlLevelDraftKeys).map(String).filter(key=>available.has(key));
+        const controlKeys = [...new Set(manualControlLevelOptionsV61().filter(option=>committed.includes(option.key)).map(option=>option.controlKey))];
+        return { ...prev, controlLevelKeys:committed, controlLevelDraftKeys:[...committed], controlKeys, controlKey:controlKeys[0]||'',
+            testKey:'', testKeys:[], testDraftKeys:[], entries:{}, controlPickerOpen:false, testPickerOpen:false };
+    });
+    const cancelManualControlsV61 = () => setQcEntryEditor(prev => prev ? { ...prev, controlPickerOpen:false, controlLevelDraftKeys:[...safeArray(prev.controlLevelKeys)] } : prev);
+    const selectStandaloneManualControlV57 = value => setQcEntryEditor(prev => {
+        if (!prev) return prev;
+        const option = manualControlLevelOptionsV61().find(item=>item.key===value || item.controlKey===value);
+        const keys = option ? [option.key] : [];
+        return { ...prev, controlLevelKeys:keys, controlLevelDraftKeys:[...keys], controlKeys:option?[option.controlKey]:[], controlKey:option?.controlKey||'', testKey:'', testKeys:[], testDraftKeys:[], entries:{} };
+    });
+    const openManualTestPickerV61 = () => setQcEntryEditor(prev => prev && safeArray(prev.controlLevelKeys).length ? { ...prev, testPickerOpen:true, controlPickerOpen:false, testDraftKeys:[...safeArray(prev.testKeys)] } : prev);
+    const toggleManualTestDraftV61 = (key, checked) => setQcEntryEditor(prev => {
+        if (!prev) return prev;
+        const current = safeArray(prev.testDraftKeys).map(String);
+        const next = checked ? [...new Set([...current,key])] : current.filter(item=>item!==key);
+        return { ...prev, testDraftKeys:next };
+    });
+    const setAllManualTestDraftV61 = checked => setQcEntryEditor(prev => prev ? { ...prev, testDraftKeys:checked ? manualTestOptionsV61().map(option=>option.key) : [] } : prev);
+    const commitManualTestsV61 = () => setQcEntryEditor(prev => {
+        if (!prev) return prev;
+        const options = manualTestOptionsV61();
+        const available = new Set(options.map(option=>option.key));
+        const committed = safeArray(prev.testDraftKeys).map(String).filter(key=>available.has(key));
         const entries = {};
-        safeArray(test?.levels).forEach(level => { entries[level.level] = { value:'', action:String(qcEntryEditor?.globalAction || ''), calJudgement:String(qcEntryEditor?.overallCal || '') }; });
-        setQcEntryEditor(prev => prev ? { ...prev, testKey:value, entries } : prev);
-    };
-    const setStandaloneEntryV57 = (level, field, value) => setQcEntryEditor(prev => prev ? { ...prev, entries:{ ...(prev.entries || {}), [level]:{ ...(prev.entries?.[level] || {}), [field]:value } } } : prev);
+        options.filter(option=>committed.includes(option.key)).forEach(option => safeArray(option.rows).forEach(row => {
+            const entryKey = manualEntryKeyV61(row.control.key, option.key, row.levelRow.level);
+            entries[entryKey] = prev.entries?.[entryKey] || { value:'', action:String(prev.globalAction || ''), calJudgement:String(prev.overallCal || '') };
+        }));
+        return { ...prev, testKeys:committed, testDraftKeys:[...committed], testKey:committed[0]||'', entries, testPickerOpen:false };
+    });
+    const cancelManualTestsV61 = () => setQcEntryEditor(prev => prev ? { ...prev, testPickerOpen:false, testDraftKeys:[...safeArray(prev.testKeys)] } : prev);
+    const selectStandaloneManualTestV57 = value => setQcEntryEditor(prev => {
+        if (!prev) return prev;
+        const option = manualTestOptionsV61().find(item=>item.key===value);
+        if (!option) return { ...prev, testKey:'', testKeys:[], testDraftKeys:[], entries:{} };
+        const entries = {};
+        safeArray(option.rows).forEach(row => {
+            const entryKey = manualEntryKeyV61(row.control.key, option.key, row.levelRow.level);
+            entries[entryKey] = { value:'', action:String(prev.globalAction || ''), calJudgement:String(prev.overallCal || '') };
+        });
+        return { ...prev, testKey:value, testKeys:[value], testDraftKeys:[value], entries };
+    });
+    const setStandaloneEntryV57 = (entryKey, field, value) => setQcEntryEditor(prev => prev ? { ...prev, entries:{ ...(prev.entries || {}), [entryKey]:{ ...(prev.entries?.[entryKey] || {}), [field]:value } } } : prev);
     const applyStandaloneActionV57 = () => setQcEntryEditor(prev => {
         if (!prev) return prev;
-        const text = String(prev.globalAction || '').trim();
-        const entries = { ...(prev.entries || {}) };
-        Object.keys(entries).forEach(level => { entries[level] = { ...entries[level], action:text }; });
+        const text = String(prev.globalAction || '').trim(), entries = { ...(prev.entries || {}) };
+        Object.keys(entries).forEach(key => { entries[key] = { ...entries[key], action:text }; });
         return { ...prev, entries };
     });
     const applyStandaloneCalV57 = value => setQcEntryEditor(prev => {
         if (!prev) return prev;
         const entries = { ...(prev.entries || {}) };
-        Object.keys(entries).forEach(level => { entries[level] = { ...entries[level], calJudgement:value }; });
+        Object.keys(entries).forEach(key => { entries[key] = { ...entries[key], calJudgement:value }; });
         return { ...prev, overallCal:value, entries };
     });
     const standaloneTargetTextV57 = levelRow => {
@@ -15738,67 +15873,58 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
     const saveStandaloneDailyEntryV57 = async () => {
         const editor = qcEntryEditor;
         if (!editor?.standalone) return;
-        const control = manualSelectedControlV57();
-        const test = manualSelectedTestV57();
-        if (!editor.date || !editor.time || !editor.device || !control || !test) {
-            alert('시행일자, 장비명, Control(Lot), 검사항목을 선택하세요.');
-            return;
+        const selectedControlLevels = manualSelectedControlLevelsV61();
+        const selectedTests = manualSelectedTestsV61();
+        if (!editor.date || !editor.time || !editor.device || !selectedControlLevels.length || !selectedTests.length) {
+            alert('시행일자, 장비명, Control(Lot), 검사항목을 선택하세요.'); return;
         }
-        const levels = safeArray(test.levels).filter(level => String(editor.entries?.[level.level]?.value ?? '').trim() !== '');
-        if (!levels.length) {
-            alert('저장할 Level 결과를 입력하세요.');
-            return;
-        }
+        const enteredRows = manualEntryRowsV61().map(row => ({ ...row, entry:editor.entries?.[row.entryKey] || {} }))
+            .filter(row => String(row.entry?.value ?? '').trim() !== '');
+        if (!enteredRows.length) { alert('저장할 Level 결과를 입력하세요.'); return; }
         const nowIso = new Date().toISOString();
-        const equipmentMeta = inyQcMasterEquipmentOptions(equipmentList, selectedPart).find(item => analysisDeviceMatches(item.name, editor.device)) || null;
-        const rows = levels.map(levelRow => {
-            const entry = editor.entries?.[levelRow.level] || {};
+        const equipmentMeta = inyQcMasterEquipmentOptions(equipmentList, selectedPart).find(item => manualDeviceCanonicalV61(item.name) === manualDeviceCanonicalV61(editor.device)) || null;
+        const rows = enteredRows.map(({control,test,levelRow,selectedTest,entry}) => {
             const rawValue = String(entry.value ?? '').trim();
-            const numeric = Number(rawValue);
-            const value = rawValue !== '' && Number.isFinite(numeric) ? numeric : rawValue;
-            const lot = String(levelRow.lot || (levelRow.level === '1' ? control.levelLots.level1 : levelRow.level === '2' ? control.levelLots.level2 : control.levelLots.level3) || '').trim();
+            const numeric = Number(rawValue), value = rawValue !== '' && Number.isFinite(numeric) ? numeric : rawValue;
+            const lot = String(levelRow.lot || '').trim();
             const low = Number(levelRow.min), high = Number(levelRow.max);
             const status = Number.isFinite(Number(value)) && Number.isFinite(low) && Number.isFinite(high) && (Number(value) < low || Number(value) > high) ? 'warn' : 'ok';
             const action = String(entry.action || editor.globalAction || '').trim();
             const calJudgement = String(entry.calJudgement || editor.overallCal || '').trim();
-            const identitySeed = [selectedPart,editor.device,control.controlMaterialId||control.name,lot,levelRow.level,test.code,editor.date,editor.time,String(value),nowIso].join('|');
+            const testCode = String(test?.code || selectedTest?.code || selectedTest?.key || '').trim();
+            const testName = String(test?.name || selectedTest?.name || testCode).trim();
+            const identitySeed = [selectedPart,editor.device,control.controlMaterialId||control.name,lot,levelRow.level,testCode,editor.date,editor.time,String(value),nowIso].join('|');
             return {
-                id:`qcmanual_${qcStorageHash(identitySeed)}`,
-                part:selectedPart,
+                id:`qcmanual_${qcStorageHash(identitySeed)}`, part:selectedPart,
                 date:String(editor.date).slice(0,10), time:String(editor.time).slice(0,8),
                 device:editor.device, deviceName:editor.device, equipment:editor.device,
                 deviceId:String(control.deviceId || equipmentMeta?.id || ''),
-                equipmentSet:String(equipmentMeta?.row?.equipmentSet || ''),
+                equipmentSet:String(equipmentMeta?.row?.equipmentSet || (/\(sub\)/i.test(editor.device)?'sub':/\(main\)/i.test(editor.device)?'main':'')),
                 controlMaterialId:String(control.controlMaterialId || ''),
                 controlMaterialName:control.name, qcMaterialName:control.name, qcMaterial:control.name, controlName:control.name,
                 level:`Level ${levelRow.level}`, qcLevel:`Level ${levelRow.level}`,
                 qcLot:lot, controlLot:lot, lot, lotNo:lot,
-                testCode:test.code, testName:test.name,
-                value, result:value, unit:String(levelRow.unit || test.unit || ''),
+                testCode, testName, value, result:value, unit:String(levelRow.unit || test?.unit || selectedTest?.unit || ''),
                 mean:levelRow.mean, sd:levelRow.sd, targetMean:levelRow.mean, targetSd:levelRow.sd, targetMin:levelRow.min, targetMax:levelRow.max,
-                status, rule:'',
-                action, actionText:action,
-                calibrationResult:calJudgement, calJudgement,
-                operator:String(editor.operator || '').trim(),
-                sourceFile:'INYQC_MANUAL_QC', source_file:'INYQC_MANUAL_QC', sourceType:'manual', sourceFormat:'INYQC manual daily entry',
-                storageSource:'manual-qc-entry', manualInput:true, autoImported:false, resultType:Number.isFinite(Number(value)) ? 'numeric' : 'qualitative',
-                mappingStatus:'manual', appliedTargetProfileId:String(control.profile?.id || control.profile?.profileId || ''),
-                targetSource:control.profile?.sourceType || control.profile?.targetSource || '',
+                status, rule:'', action, actionText:action, calibrationResult:calJudgement, calJudgement,
+                operator:String(editor.operator || '').trim(), sourceFile:'INYQC_MANUAL_QC', source_file:'INYQC_MANUAL_QC',
+                sourceType:'manual', sourceFormat:'INYQC manual daily entry', storageSource:'manual-qc-entry', manualInput:true, autoImported:false,
+                resultType:Number.isFinite(Number(value)) ? 'numeric' : 'qualitative', mappingStatus:'manual',
+                appliedTargetProfileId:String(control.profile?.id || control.profile?.profileId || ''), targetSource:control.profile?.sourceType || control.profile?.targetSource || '',
                 manualEntryReason:action || '수기 데이터 입력', createdAt:nowIso, updatedAt:nowIso, isDeleted:false, deleted:false
             };
         });
-        await idbUpsertRows('qcResults', rows).catch(error => { console.error('[V57 manual entry IDB]', error); throw error; });
+        await idbUpsertRows('qcResults', rows).catch(error => { console.error('[V61 manual entry IDB]', error); throw error; });
         setQcRows(prev => {
             const next = safeArray(prev).slice();
             rows.forEach(row => {
-                const key = dailyQcIdentityKeyV44(row);
-                const index = next.findIndex(existing => dailyQcIdentityKeyV44(existing) === key);
+                const key = dailyQcIdentityKeyV44(row), index = next.findIndex(existing => dailyQcIdentityKeyV44(existing) === key);
                 if (index < 0) next.push(row); else next[index] = { ...next[index], ...row };
             });
             return next;
         });
         const actionRows = rows.filter(row => String(row.actionText || '').trim()).map(row => ({ row, actionText:row.actionText, operator:row.operator }));
-        if (actionRows.length) inyQcAppendActionEvents(actionRows, { part:selectedPart, actionTemplates:activeActionTemplates }).catch(error => console.warn('[V57 manual action event]', error));
+        if (actionRows.length) inyQcAppendActionEvents(actionRows, { part:selectedPart, actionTemplates:activeActionTemplates }).catch(error => console.warn('[V61 manual action event]', error));
         try { window.dispatchEvent(new CustomEvent('inyqc:business-dirty', { detail:{ domain:'dailyQc', mode:'manual' } })); } catch (e) {}
         setFilters(prev => ({ ...prev, start: editor.date < prev.start ? editor.date : prev.start, end: editor.date > prev.end ? editor.date : prev.end }));
         setQcEntryEditor(null);
@@ -15807,62 +15933,86 @@ function DailyQcScreen({ qcRows, setQcRows, importedQcResults = [], setImportedQ
     const renderStandaloneDailyEntryV57 = () => {
         if (!qcEntryEditor?.standalone) return null;
         const devices = manualDeviceOptionsV57();
-        const controls = manualControlOptionsV57();
-        const control = manualSelectedControlV57();
-        const tests = manualTestOptionsV57();
-        const test = manualSelectedTestV57();
-        const levels = safeArray(test?.levels);
-        const rowLine = (label, child) => React.createElement('div',{style:{display:'grid',gridTemplateColumns:'145px minmax(0,1fr)',minHeight:'48px',borderBottom:'1px solid #CDD3D9'}},
+        const controlLevels = manualControlLevelOptionsV61();
+        const selectedControlLevels = manualSelectedControlLevelsV61();
+        const tests = manualTestOptionsV61();
+        const selectedTests = manualSelectedTestsV61();
+        const entryRows = manualEntryRowsV61();
+        const controlDraft = new Set(safeArray(qcEntryEditor.controlLevelDraftKeys).map(String));
+        const testDraft = new Set(safeArray(qcEntryEditor.testDraftKeys).map(String));
+        const allTestsDraft = tests.length > 0 && tests.every(option=>testDraft.has(option.key));
+        const rowLine = (label, child, extra={}) => React.createElement('div',{style:{display:'grid',gridTemplateColumns:'145px minmax(0,1fr)',minHeight:'48px',borderBottom:'1px solid #CDD3D9',...extra}},
             React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',padding:'8px 10px',background:'#E7E8EA',borderRight:'1px solid #CDD3D9',fontSize:'13px',fontWeight:900,color:'#2F353B',textAlign:'center'}},label),
-            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'7px 10px',minWidth:0,background:'#FFFFFF'}},child));
-        const compactField = { ...inputStyle(), height:'34px', borderRadius:'2px', maxWidth:'380px' };
-        const targetCellText = level => standaloneTargetTextV57(level);
-        return React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'10px'}},
+            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'7px 10px',minWidth:0,background:'#FFFFFF',position:'relative'}},child));
+        const compactField = { ...inputStyle(), height:'34px', borderRadius:'2px', maxWidth:'520px' };
+        const pickerButtonStyle = disabled => ({...compactField,maxWidth:'590px',width:'100%',display:'flex',alignItems:'center',textAlign:'left',padding:'0 10px',background:disabled?'#F7F7F7':'#FFFFFF',opacity:disabled?.55:1,cursor:disabled?'default':'pointer',color:'#374151'});
+        const popupStyle = {position:'absolute',left:'10px',top:'44px',zIndex:9999,width:'min(520px,calc(100vw - 90px))',background:'#fff',border:'1px solid #AEB6BF',borderRadius:'5px',boxShadow:'0 12px 28px rgba(15,23,42,.20)',overflow:'hidden'};
+        const listStyle = {maxHeight:'300px',overflowY:'auto',background:'#fff'};
+        const optionStyle = checked => ({display:'flex',alignItems:'center',gap:'10px',padding:'8px 12px',borderBottom:'1px solid #E2E5E9',fontSize:'12px',cursor:'pointer',background:checked?'#EEF5FF':'#FFFFFF'});
+        const footer = (onOk,onCancel) => React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',borderTop:'1px solid #BFC5CB',background:'#FAFAFA'}},
+            React.createElement('button',{type:'button',onClick:onOk,style:{height:'36px',border:0,borderRight:'1px solid #CDD2D7',background:'#FFF',fontWeight:800,cursor:'pointer'}},'OK'),
+            React.createElement('button',{type:'button',onClick:onCancel,style:{height:'36px',border:0,background:'#FFF',fontWeight:700,cursor:'pointer'}},'Cancel'));
+        const controlSummary = selectedControlLevels.length ? selectedControlLevels.map(item=>item.label).join(', ') : (qcEntryEditor.device?'Control(Lot) 선택':'장비를 먼저 선택');
+        const testSummary = selectedTests.length ? `${selectedTests.length} 개 항목 선택` : (selectedControlLevels.length?'검사항목 선택':'Control(Lot)을 먼저 선택');
+        const controlPicker = React.createElement('div',{style:{width:'min(590px,100%)'}},
+            React.createElement('button',{type:'button',disabled:!qcEntryEditor.device,onClick:openManualControlPickerV61,style:pickerButtonStyle(!qcEntryEditor.device)},
+                React.createElement('span',{style:{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},controlSummary),React.createElement('span',{style:{marginLeft:'auto'}},'▾')),
+            qcEntryEditor.controlPickerOpen && React.createElement('div',{style:popupStyle},
+                React.createElement('div',{style:listStyle},controlLevels.length ? controlLevels.map(option=>React.createElement('label',{key:option.key,style:optionStyle(controlDraft.has(option.key))},
+                    React.createElement('input',{type:'checkbox',checked:controlDraft.has(option.key),onChange:e=>toggleManualControlDraftV61(option.key,e.target.checked)}),
+                    React.createElement('span',null,option.label))) : React.createElement('div',{style:{padding:'18px',fontSize:'12px',color:T.dim,textAlign:'center'}},'선택 가능한 Control(Lot)이 없습니다.')),
+                footer(commitManualControlsV61,cancelManualControlsV61)));
+        const testPicker = React.createElement('div',{style:{width:'min(590px,100%)'}},
+            React.createElement('button',{type:'button',disabled:!selectedControlLevels.length,onClick:openManualTestPickerV61,style:pickerButtonStyle(!selectedControlLevels.length)},
+                React.createElement('span',{style:{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},testSummary),React.createElement('span',{style:{marginLeft:'auto'}},'▾')),
+            qcEntryEditor.testPickerOpen && React.createElement('div',{style:popupStyle},
+                React.createElement('div',{style:listStyle},
+                    React.createElement('label',{style:{...optionStyle(allTestsDraft),fontWeight:900,background:'#F6F7F8'}},
+                        React.createElement('input',{type:'checkbox',checked:allTestsDraft,onChange:e=>setAllManualTestDraftV61(e.target.checked)}),React.createElement('span',null,'전체선택')),
+                    tests.map(option=>React.createElement('label',{key:option.key,style:optionStyle(testDraft.has(option.key))},
+                        React.createElement('input',{type:'checkbox',checked:testDraft.has(option.key),onChange:e=>toggleManualTestDraftV61(option.key,e.target.checked)}),React.createElement('span',null,option.name)))),
+                footer(commitManualTestsV61,cancelManualTestsV61)));
+        return React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'10px',paddingBottom:'34px'}},
             React.createElement('div',{style:{display:'flex',alignItems:'flex-end',gap:'12px',padding:'4px 2px 10px',borderBottom:'2px solid #4B535B'}},
-                React.createElement('div',null,
-                    React.createElement('div',{style:{fontSize:'20px',fontWeight:950,color:'#1F2933'}},'일일데이터 입력'),
+                React.createElement('div',null,React.createElement('div',{style:{fontSize:'20px',fontWeight:950,color:'#1F2933'}},'일일데이터 입력'),
                     React.createElement('div',{style:{marginTop:'4px',fontSize:'11px',color:'#66727E',fontWeight:700}},'EasyQC 입력 양식 기준 · 수기 QC 결과와 조치사항을 새 기록으로 추가합니다.')),
                 React.createElement('button',{type:'button',onClick:()=>setQcEntryEditor(null),className:'qc-btn',style:{marginLeft:'auto',height:'36px',minWidth:'82px'}},'목록으로')),
-            React.createElement('div',{className:'qc-panel',style:{padding:0,overflow:'hidden',borderRadius:'4px',boxShadow:'none'}},
+            React.createElement('div',{className:'qc-panel',style:{padding:0,overflow:'visible',borderRadius:'4px',boxShadow:'none'}},
                 rowLine('시행일자',React.createElement(React.Fragment,null,
                     React.createElement(UnifiedDateField,{value:qcEntryEditor.date,onChange:value=>setStandaloneManualFieldV57('date',value),width:'190px',title:'시행일자',placement:'below'}),
                     React.createElement('input',{type:'time',step:'1',value:qcEntryEditor.time,onChange:e=>setStandaloneManualFieldV57('time',e.target.value),style:{...compactField,width:'130px'}}))),
                 rowLine('분과',React.createElement('div',{style:{fontWeight:800,color:'#4B5563'}},selectedPart)),
-                rowLine('장비명',React.createElement('select',{value:qcEntryEditor.device,onChange:e=>selectStandaloneManualDeviceV57(e.target.value),style:compactField},React.createElement('option',{value:''},'선택'),devices.map(device=>React.createElement('option',{key:device,value:device},easyQcDeviceName(device))))),
-                rowLine('Control(Lot)',React.createElement('select',{value:qcEntryEditor.controlKey,disabled:!qcEntryEditor.device,onChange:e=>selectStandaloneManualControlV57(e.target.value),style:{...compactField,opacity:qcEntryEditor.device?1:.55}},React.createElement('option',{value:''},qcEntryEditor.device?'Control(Lot) 선택':'장비를 먼저 선택'),controls.map(option=>React.createElement('option',{key:option.key,value:option.key},`${option.name} · ${[['L1',option.levelLots.level1],['L2',option.levelLots.level2],['L3',option.levelLots.level3]].filter(([,lot])=>lot).map(([level,lot])=>`${level} ${lot}`).join(' / ')}`)))),
-                rowLine('검사항목',React.createElement('select',{value:qcEntryEditor.testKey,disabled:!control,onChange:e=>selectStandaloneManualTestV57(e.target.value),style:{...compactField,opacity:control?1:.55}},React.createElement('option',{value:''},control?'검사항목 선택':'Control(Lot)을 먼저 선택'),tests.map(option=>React.createElement('option',{key:option.key,value:option.key},option.name)))),
-                rowLine('전체 조치사항 (선택)',React.createElement('select',{value:qcEntryEditor.globalActionTemplate||'',onChange:e=>{const value=e.target.value;setQcEntryEditor(prev=>prev?{...prev,globalActionTemplate:value,globalAction:value}:prev);},style:compactField},React.createElement('option',{value:''},'선택'),activeActionTemplates.map(item=>React.createElement('option',{key:item.id,value:item.text},item.text)))),
+                rowLine('장비명',React.createElement('select',{value:qcEntryEditor.device,onChange:e=>selectStandaloneManualDeviceV57(e.target.value),style:compactField},
+                    React.createElement('option',{value:''},'선택'),devices.map(device=>React.createElement('option',{key:device,value:device},manualDeviceLabelV61(device))))),
+                rowLine('Control(Lot)',controlPicker,{zIndex:qcEntryEditor.controlPickerOpen?120:20}),
+                rowLine('검사항목',testPicker,{zIndex:qcEntryEditor.testPickerOpen?110:19}),
+                rowLine('전체 조치사항 (선택)',React.createElement('select',{value:qcEntryEditor.globalActionTemplate||'',onChange:e=>{const value=e.target.value;setQcEntryEditor(prev=>prev?{...prev,globalActionTemplate:value,globalAction:value}:prev);},style:compactField},
+                    React.createElement('option',{value:''},'선택'),activeActionTemplates.map(item=>React.createElement('option',{key:item.id,value:item.text},item.text)))),
                 rowLine('전체 조치사항 (입력)',React.createElement(React.Fragment,null,
                     React.createElement('textarea',{value:qcEntryEditor.globalAction||'',onChange:e=>setStandaloneManualFieldV57('globalAction',e.target.value),placeholder:'전체 Level에 적용할 조치사항을 입력하세요.',style:{...inputStyle(),width:'min(760px,calc(100% - 100px))',minHeight:'64px',padding:'8px 10px',resize:'vertical'}}),
                     React.createElement('button',{type:'button',onClick:applyStandaloneActionV57,className:'qc-btn',style:{height:'34px',minWidth:'82px'}},'전체적용'))),
-                rowLine('Cal 판정 선택',React.createElement('select',{value:qcEntryEditor.overallCal||'',onChange:e=>applyStandaloneCalV57(e.target.value),style:compactField},React.createElement('option',{value:''},'Cal 판정선택'),React.createElement('option',{value:'OK'},'OK'),React.createElement('option',{value:'Fail'},'Fail'))),
+                rowLine('Cal 판정 선택',React.createElement('select',{value:qcEntryEditor.overallCal||'',onChange:e=>applyStandaloneCalV57(e.target.value),style:compactField},
+                    React.createElement('option',{value:''},'Cal 판정선택'),React.createElement('option',{value:'OK'},'OK'),React.createElement('option',{value:'Fail'},'Fail'))),
                 rowLine('시행자',React.createElement('input',{value:qcEntryEditor.operator||'',onChange:e=>setStandaloneManualFieldV57('operator',e.target.value),placeholder:'시행자',style:compactField}))),
-            React.createElement('div',{className:'qc-panel',style:{padding:0,overflow:'hidden',borderRadius:'4px',boxShadow:'none'}},
-                React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',tableLayout:'fixed',fontSize:'11px'}},
-                    React.createElement('colgroup',null,
-                        React.createElement('col',{style:{width:'19%'}}),React.createElement('col',{style:{width:'8%'}}),React.createElement('col',{style:{width:'15%'}}),React.createElement('col',{style:{width:'17%'}}),React.createElement('col',{style:{width:'31%'}}),React.createElement('col',{style:{width:'10%'}})),
-                    React.createElement('thead',null,
-                        React.createElement('tr',{style:{background:'#E1E2E3',borderTop:'2px solid #555D65'}},
-                            React.createElement('th',{rowSpan:2,style:{padding:'8px',borderRight:'1px solid #C4C9CE',borderBottom:'1px solid #C4C9CE'}},'검사항목'),
-                            React.createElement('th',{colSpan:3,style:{padding:'8px',borderRight:'1px solid #C4C9CE',borderBottom:'1px solid #C4C9CE'}},'Level'),
-                            React.createElement('th',{rowSpan:2,style:{padding:'8px',borderRight:'1px solid #C4C9CE',borderBottom:'1px solid #C4C9CE'}},'조치사항'),
-                            React.createElement('th',{rowSpan:2,style:{padding:'8px',borderBottom:'1px solid #C4C9CE'}},'Cal판정')),
-                        React.createElement('tr',{style:{background:'#E1E2E3'}},
-                            React.createElement('th',{style:{padding:'7px',borderRight:'1px solid #C4C9CE',borderBottom:'1px solid #C4C9CE'}},'Level'),
-                            React.createElement('th',{style:{padding:'7px',borderRight:'1px solid #C4C9CE',borderBottom:'1px solid #C4C9CE'}},'Value'),
-                            React.createElement('th',{style:{padding:'7px',borderRight:'1px solid #C4C9CE',borderBottom:'1px solid #C4C9CE'}},'Target'))),
-                    React.createElement('tbody',null,
-                        levels.length ? levels.map((levelRow,index)=>React.createElement('tr',{key:`manual_${test?.key}_${levelRow.level}`,style:{borderTop:index===0?'2px solid #555D65':'1px solid #D5D9DD'}},
-                            index===0 && React.createElement('td',{rowSpan:levels.length,style:{padding:'9px 10px',fontWeight:900,borderRight:'1px solid #C8CED4',verticalAlign:'middle',background:'#F3F4F5'}},React.createElement('div',null,test?.name||'-'),React.createElement('div',{style:{fontSize:'9px',color:T.dim,marginTop:'3px'}},test?.code||'')),
-                            React.createElement('td',{style:{padding:'7px',textAlign:'center',borderRight:'1px solid #C8CED4'}},levelRow.level),
-                            React.createElement('td',{style:{padding:'6px',borderRight:'1px solid #C8CED4'}},React.createElement('input',{value:qcEntryEditor.entries?.[levelRow.level]?.value||'',onChange:e=>setStandaloneEntryV57(levelRow.level,'value',e.target.value),placeholder:'결과',style:{...inputStyle(),width:'100%',height:'32px',textAlign:'center',fontFamily:'monospace'}})),
-                            React.createElement('td',{style:{padding:'7px',textAlign:'center',borderRight:'1px solid #C8CED4',fontFamily:'monospace',color:'#52677F'}},React.createElement('div',null,targetCellText(levelRow)),React.createElement('div',{style:{fontSize:'9px',marginTop:'3px',color:T.dim}},levelRow.lot?`LOT ${levelRow.lot}`:'')),
-                            React.createElement('td',{style:{padding:'6px',borderRight:'1px solid #C8CED4'}},React.createElement('textarea',{value:qcEntryEditor.entries?.[levelRow.level]?.action||'',onChange:e=>setStandaloneEntryV57(levelRow.level,'action',e.target.value),style:{...inputStyle(),width:'100%',minHeight:'50px',padding:'6px 8px',resize:'vertical'}})),
-                            React.createElement('td',{style:{padding:'6px',textAlign:'center'}},React.createElement('select',{value:qcEntryEditor.entries?.[levelRow.level]?.calJudgement||'',onChange:e=>setStandaloneEntryV57(levelRow.level,'calJudgement',e.target.value),style:{...inputStyle(),width:'100%',height:'32px'}},React.createElement('option',{value:''},'선택'),React.createElement('option',{value:'OK'},'OK'),React.createElement('option',{value:'Fail'},'Fail')))
-                        )) : React.createElement('tr',null,React.createElement('td',{colSpan:6,style:{padding:'34px 12px',textAlign:'center',color:T.muted}},control ? (tests.length ? '검사항목을 선택하세요.' : '등록된 검사항목/Target이 없습니다.') : '장비와 Control(Lot)을 선택하세요.'))))),
-            React.createElement('div',{style:{display:'flex',justifyContent:'flex-end',gap:'8px'}},
+            React.createElement('div',{className:'qc-panel',style:{padding:0,overflowX:'auto',borderRadius:'4px',boxShadow:'none'}},
+                React.createElement('table',{style:{width:'100%',minWidth:'980px',borderCollapse:'collapse',background:'#fff'}},
+                    React.createElement('thead',null,React.createElement('tr',{style:{background:'#E1E2E3'}},
+                        ['검사항목','Control(Lot)','Level','Value','Target','조치사항','판정'].map(label=>React.createElement('th',{key:label,style:{padding:'7px',borderRight:'1px solid #C4C9CE',borderBottom:'2px solid #555D65',fontSize:'11px',fontWeight:900,textAlign:'center'}},label)))),
+                    React.createElement('tbody',null,entryRows.length ? entryRows.map((row,index)=>{
+                        const entry = qcEntryEditor.entries?.[row.entryKey] || {};
+                        const controlLabel = `${row.control.name}-${row.levelRow.lot}(L${row.levelRow.level})`;
+                        return React.createElement('tr',{key:row.entryKey,style:{borderTop:index===0?'2px solid #555D65':'1px solid #D5D9DD'}},
+                            React.createElement('td',{style:{padding:'7px 9px',fontWeight:850,borderRight:'1px solid #C8CED4'}},row.selectedTest.name),
+                            React.createElement('td',{style:{padding:'7px 9px',borderRight:'1px solid #C8CED4',fontSize:'11px'}},controlLabel),
+                            React.createElement('td',{style:{padding:'7px',textAlign:'center',borderRight:'1px solid #C8CED4'}},row.levelRow.level),
+                            React.createElement('td',{style:{padding:'6px',borderRight:'1px solid #C8CED4'}},React.createElement('input',{value:entry.value||'',onChange:e=>setStandaloneEntryV57(row.entryKey,'value',e.target.value),placeholder:'결과',style:{...inputStyle(),width:'100%',height:'32px',textAlign:'center',fontFamily:'monospace'}})),
+                            React.createElement('td',{style:{padding:'7px',textAlign:'center',borderRight:'1px solid #C8CED4',fontFamily:'monospace',color:'#52677F'}},standaloneTargetTextV57(row.levelRow)),
+                            React.createElement('td',{style:{padding:'6px',borderRight:'1px solid #C8CED4'}},React.createElement('textarea',{value:entry.action||'',onChange:e=>setStandaloneEntryV57(row.entryKey,'action',e.target.value),style:{...inputStyle(),width:'100%',minHeight:'46px',padding:'6px 8px',resize:'vertical'}})),
+                            React.createElement('td',{style:{padding:'6px',textAlign:'center'}},React.createElement('select',{value:entry.calJudgement||'',onChange:e=>setStandaloneEntryV57(row.entryKey,'calJudgement',e.target.value),style:{...inputStyle(),width:'100%',height:'32px'}},React.createElement('option',{value:''},'선택'),React.createElement('option',{value:'OK'},'OK'),React.createElement('option',{value:'Fail'},'Fail'))));
+                    }) : React.createElement('tr',null,React.createElement('td',{colSpan:7,style:{padding:'34px 12px',textAlign:'center',color:T.muted}},selectedControlLevels.length ? (tests.length?'검사항목을 선택하세요.':'등록된 검사항목/Target이 없습니다.') : '장비와 Control(Lot)을 선택하세요.'))))),
+            React.createElement('div',{style:{display:'flex',justifyContent:'flex-end',gap:'8px',paddingBottom:'8px'}},
                 React.createElement('button',{type:'button',onClick:()=>setQcEntryEditor(null),className:'qc-btn'},'취소'),
-                React.createElement('button',{type:'button',onClick:saveStandaloneDailyEntryV57,className:'qc-btn qc-btn-primary',disabled:!test},'저장'))
+                React.createElement('button',{type:'button',onClick:saveStandaloneDailyEntryV57,className:'qc-btn qc-btn-primary',disabled:!selectedTests.length},'저장'))
         );
     };
 
